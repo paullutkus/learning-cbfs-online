@@ -96,7 +96,7 @@ def check_obs(x, obs_f):
 ##################
 
 
-def local_grid(pos, gparams, obs_funcs, safe_pts, unsafe_pts, rx, thn, mult=1):
+def local_grid(pos, gparams, obs_funcs, rx, thn, mult=1):
     xmax, xmin, ymax, ymin, dx = gparams
     xn  = int(np.round((xmax - xmin) / dx)) + 1
     yn  = int(np.round((ymax - ymin) / dx)) + 1

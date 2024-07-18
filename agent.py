@@ -8,6 +8,8 @@ from   scipy.integrate import solve_ivp, odeint
 from   utils           import plot_cbf
 from   data            import local_grid
 from   integration     import dynamics_RK4
+from IPython.display import HTML
+import matplotlib.animation as anim
 
 
 
@@ -125,10 +127,10 @@ class Agent:
         return (x_buffer, x_safe)
 
 
-    def get_local_V(self, gparams, obs_funcs, safe_pts, unsafe_pts, rx, thn, T=500, mult=1):
+    def get_local_V(self, gparams, obs_funcs, rx, thn, T=500, mult=1):
 
-        local_hjb_grid, sdf, grid = local_grid(self.pos  , gparams, obs_funcs , safe_pts,
-                                               unsafe_pts, rx     , thn       , mult    )
+        local_hjb_grid, sdf, grid = local_grid(self.pos, gparams, obs_funcs,
+                                               rx      , thn    , mult     )
         solver_settings = hj.SolverSettings.with_accuracy("very_high",
                                                           hamiltonian_postprocessor=hj.solver.backwards_reachable_tube,
                                                           value_postprocessor      =hj.solver.static_obstacle(sdf))

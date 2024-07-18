@@ -37,10 +37,22 @@ def phiT(x, C, bf, s): # is a column vector
     #print("x - C shape", (x[...,np.newaxis,:] - C[np.newaxis,...]).shape)
     r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
     #print("r shape", r.shape)
+    if bf == 0:
+        phi = np.e**(-s*r**2)
+        #print("phi shape", phi.shape)
+        return phi
+    if bf == 2:
+        phi = np.sqrt(s + r**2)
+        #print("phi shape", phi.shape)
+        return phi
     if bf == 31:
-        return np.maximum(0, s - r)**4 * (1 + 4*r)/20
+        phi = np.maximum(0, s - r)**4 * (1 + 4*r)/20
+        #print("phi shape", phi.shape)
+        return phi
     if bf == 32: 
-        return np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
+        phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
+        print("phi shape", phi.shape)
+        return phi
 
 
 def get_phiT(a):
@@ -48,10 +60,23 @@ def get_phiT(a):
     s  = a.s
     def phiT(x, C): # is a column vector
         r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
+        if bf == 0:
+            #print(np.e**(-s*r**2))
+            phi =  np.e**(-s*r**2)
+            #print("phi shape", phi.shape)
+            return phi
+        if bf == 2:
+            phi = np.sqrt(s + r**2)
+            #print("phi shape", phi.shape)
+            return phi
         if bf == 31:
-            return np.maximum(0, s - r)**4 * (1 + 4*r)/20
+            phi = np.maximum(0, s - r)**4 * (1 + 4*r)/20
+            #print("phi shape", phi.shape)
+            return phi
         if bf == 32: 
-            return np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
+            phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
+            #print("phi shape", phi.shape)
+            return phi
     return phiT
 
 
@@ -61,10 +86,23 @@ def get_phiT_curr(a):
     C  = a.centers[-1]
     def phi(x): # is a column vector
         r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
+        if bf == 0:
+            phi = np.e**(-s*r**2)
+            #print("phi shape", phi.shape)
+            return phi
+        if bf == 2:
+            phi = np.sqrt(s + r**2)
+            #print("phi shape", phi.shape)
+            return phi
         if bf == 31:
-            return np.maximum(0, s - r)**4 * (1 + 4*r)/20
-        if bf == 32: 
-            return np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
+            phi = np.maximum(0, s - r)**4 * (1 + 4*r)/20
+            #print("phi shape", phi.shape)
+            return phi
+
+        if bf == 32:    
+            phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
+            #print("phi shape", phi.shape)
+            return phi
     return phi
 
 
@@ -77,6 +115,17 @@ def get_Dphi(a):
         #x = np.array(x)
         #x = x.reshape(1, -1)
         #print("msk shape", msk.shape)
+        if bf == 0:
+            dwdr = -4*s*r*np.e**(-s*r**2)
+            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...])
+            #print("Dphi shape", Dphi.shape)
+            return Dphi
+        if bf == 2:
+            print("numer shape", (x[...,np.newaxis,:] - C[np.newaxis,...]).shape)
+            print("denom shape", np.sqrt(s + r**2)[...,np.newaxis].shape)
+            Dphi = (x[...,np.newaxis,:] - C[np.newaxis,...]) / np.sqrt(s + r**2)[...,np.newaxis]
+            #print("Dphi shape", Dphi.shape)
+            return Dphi
         if bf == 31:
             dwdr = (msk*(-4*(s - r)**3 * (1 + 4*r)    / 20 +\
                           4*np.maximum(0, s -   r)**4 / 20) )#.reshape(-1, 1) 
@@ -85,11 +134,16 @@ def get_Dphi(a):
             #print("dwdr shape", dwdr.shape)
             #print("numer shape", (dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...])).shape)
             Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]#.reshape(-1, 1))
+            #print("Dphi shape", Dphi.shape)
             return Dphi
         if bf == 32:
-            Dphi = ( msk*(-6*(s - r)**5 * (1 + 18*r + 35*r**2)/1680 + \
-                                          (    18   + 70*r   )/1680) ).reshape(-1, 1) * \
-                   (x - C) / np.sqrt(1e-5 + np.sum(np.square(x - C), axis=1, keepdims=True))
+            dwdr = (msk*(-6*(s-r)**5 * (1 + 18*r + 35*r**2)  /1680 + \
+                                       (    18   + 70*r   )  /1680) )
+            #Dphi = ( msk*(-6*(s - r)**5 * (1 + 18*r + 35*r**2)/1680 + \
+            #                              (    18   + 70*r   )/1680) ).reshape(-1, 1) * \
+            #       (x - C) / np.sqrt(1e-5 + np.sum(np.square(x - C), axis=1, keepdims=True))
+            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
+            #print("Dphi shape", Dphi.shape)
             return Dphi
     return Dphi
 
@@ -103,15 +157,26 @@ def get_Dphi_curr(a):
         msk = np.sign(np.maximum(0, s - r))
         x = np.array(x)
         x = x.reshape(1, -1)
+        if bf == 0:
+            dwdr = -4*s*r*np.e**(-s*r**2)
+            Dphi = Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...])
+            #print("Dphi shape", Dphi.shape)
+            return Dphi
+        if bf == 2:
+            Dphi = (x[...,np.newaxis,:] - C[np.newaxis,...]) / np.sqrt(s + r**2)[...,np.newaxis]
+            #print("Dphi shape", Dphi.shape)
+            return Dphi
         if bf == 31:
             dwdr = (msk*(-4*(s - r)**3 * (1 + 4*r)    / 20 +\
                           4*np.maximum(0, s -   r)**4 / 20) ).reshape(-1, 1) 
             Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
+            #print("Dphi shape", Dphi.shape)
             return Dphi
         if bf == 32:
             Dphi = ( msk*(-6*(s - r)**5 * (1 + 18*r + 35*r**2)/1680 + \
                                           (    18   + 70*r   )/1680) ).reshape(-1, 1) * \
                    (x - C) / np.sqrt(1e-5 + np.sum(np.square(x - C), axis=1, keepdims=True))
+            #print("Dphi shape", Dphi.shape)
             return Dphi
     return Dphi
 
@@ -241,6 +306,7 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
                             )
     cone = [clarabel.NonnegativeConeT(A.shape[0])]
 
+    print("problem done building")
     settings = clarabel.DefaultSettings()
     solver   = clarabel.DefaultSolver(P, q, A, b, cone, settings)
     solution = solver.solve()

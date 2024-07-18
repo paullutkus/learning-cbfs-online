@@ -43,6 +43,9 @@ class Dynamics(metaclass=abc.ABCMeta):
         control, disturbance = self.optimal_control_and_disturbance(state, time, grad_value)
         return grad_value @ self(state, control, disturbance, time)
 
+    def cbvf_hamiltonian(self, state, time, value, grad_value):
+        pass
+
     @abc.abstractmethod
     def partial_max_magnitudes(self, state, time, value, grad_value_box):
         """Computes the max magnitudes of the Hamiltonian partials over the `grad_value_box` in each dimension."""

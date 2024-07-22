@@ -44,18 +44,22 @@ class Agent:
         self.obstacles     = None
 
 
-    def scan(self):
+    def scan(self, ret_in_scan_f=False):
         scan_safe   = []
         scan_unsafe = []
+        get_in_scan_f = lambda pos, sensor_radius: lambda x: np.linalg.norm(x[:2] - pos[:2]) <= sensor_radius
+        in_scan_f = get_in_scan_f(self.pos, self.sensor_radius)
         for x in self.grid:
-            if np.linalg.norm(x[:2] - self.pos[:2]) <= self.sensor_radius:
+            if in_scan_f(x): #np.linalg.norm(x[:2] - self.pos[:2]) <= self.sensor_radius:
                 if self.obs_dict[tuple(np.round(x, 3))] == 0:
                     scan_safe.append(x)
                 else:
                     scan_unsafe.append(x)
         scan_safe   = np.array(scan_safe)
         scan_unsafe = np.array(scan_unsafe)
-        return (scan_safe, scan_unsafe)
+        if ret_in_scan_f:
+            return scan_safe, scan_unsafe, in_scan_f
+        return scan_safe, scan_unsafe
 
 
     def scan_hjb(self, V, hjb_grid):
@@ -86,8 +90,10 @@ class Agent:
             grid = self.grid
         else:
             grid = grid
-        is_obs = lambda x: (np.linalg.norm(x[:2] - self.pos[:2]) >= self.sensor_radius) and \
-                           (np.linalg.norm(x[:2] - self.pos[:2]) <= outer_radius)
+        get_is_obs = lambda pos, sensor_radius, outer_radius: lambda x: (np.linalg.norm(x[:2] - pos[:2]) >= sensor_radius) and \
+                                                                        (np.linalg.norm(x[:2] - pos[:2]) <=  outer_radius)
+        is_obs = get_is_obs(self.pos, self.sensor_radius, outer_radius)
+
         for x in grid:
             #r = np.linalg.norm(x[:2] - self.pos[:2])
             #if (r >= self.sensor_radius) and (r <= outer_radius):
@@ -127,10 +133,10 @@ class Agent:
         return (x_buffer, x_safe)
 
 
-    def get_local_V(self, gparams, obs_funcs, rx, thn, T=500, mult=1):
+    def get_local_V(self, gparams, obs_funcs, thn, rx=None, out_func=None, T=500, mult=1):
 
         local_hjb_grid, sdf, grid = local_grid(self.pos, gparams, obs_funcs,
-                                               rx      , thn    , mult     )
+                                               thn     , rx=rx,   out_func=out_func, mult=mult)
         solver_settings = hj.SolverSettings.with_accuracy("very_high",
                                                           hamiltonian_postprocessor=hj.solver.backwards_reachable_tube,
                                                           value_postprocessor      =hj.solver.static_obstacle(sdf))

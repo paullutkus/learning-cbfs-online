@@ -15,11 +15,12 @@ class Dynamics(metaclass=abc.ABCMeta):
         disturbance_space: A `BoundedSet` defining the (time-invariant) set of possible disturbances.
     """
 
-    def __init__(self, control_mode, disturbance_mode, control_space, disturbance_space):
+    def __init__(self, control_mode, disturbance_mode, control_space, disturbance_space, gamma):
         self.control_mode = control_mode
         self.disturbance_mode = disturbance_mode
         self.control_space = control_space
         self.disturbance_space = disturbance_space
+        self.gamma = gamma
 
     @abc.abstractmethod
     def __call__(self, state, control, disturbance, time):
@@ -39,12 +40,9 @@ class Dynamics(metaclass=abc.ABCMeta):
 
     def hamiltonian(self, state, time, value, grad_value):
         """Evaluates the HJ PDE Hamiltonian."""
-        del value  # unused
+        #del value  # unused
         control, disturbance = self.optimal_control_and_disturbance(state, time, grad_value)
-        return grad_value @ self(state, control, disturbance, time)
-
-    def cbvf_hamiltonian(self, state, time, value, grad_value):
-        pass
+        return grad_value @ self(state, control, disturbance, time) + self.gamma * value
 
     @abc.abstractmethod
     def partial_max_magnitudes(self, state, time, value, grad_value_box):

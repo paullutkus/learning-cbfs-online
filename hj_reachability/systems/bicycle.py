@@ -6,6 +6,7 @@ from hj_reachability import sets
 class Bicycle(dynamics.ControlAndDisturbanceAffineDynamics):
 
     def __init__(self,
+                 gamma             = 1,
                  V                 = 0.25,
                  umax              = 0.66,
                  control_mode      ="max",
@@ -21,7 +22,7 @@ class Bicycle(dynamics.ControlAndDisturbanceAffineDynamics):
         if disturbance_space is None:
             disturbance_space = sets.Box(jnp.array([ 0   ]), jnp.array([0   ]))
 
-        super().__init__(control_mode, disturbance_mode, control_space, disturbance_space)
+        super().__init__(control_mode, disturbance_mode, control_space, disturbance_space, gamma)
 
     def open_loop_dynamics(self, state, time):
         return jnp.array([self.V * jnp.cos(state[2]), self.V * jnp.sin(state[2]), 0])

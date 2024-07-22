@@ -6,7 +6,8 @@ from hj_reachability import sets
 class Planar(dynamics.ControlAndDisturbanceAffineDynamics):
 
     def __init__(self,
-                 s                 = -1,
+                 gamma             = 1,
+                 s                 =-1,
                  delta             = 1.,
                  umax              = 1.,
                  control_type      ="ball",
@@ -29,7 +30,7 @@ class Planar(dynamics.ControlAndDisturbanceAffineDynamics):
         if disturbance_space is None:
             disturbance_space = sets.Box(jnp.array([0, 0]), jnp.array([0, 0]))
 
-        super().__init__(control_mode, disturbance_mode, control_space, disturbance_space)
+        super().__init__(control_mode, disturbance_mode, control_space, disturbance_space, gamma)
 
     def open_loop_dynamics(self, state, time):
         return self.s * state

@@ -271,7 +271,8 @@ def cvx_train_cbf(a, x_safe  , u_safe  ,
     prob.solve(verbose=True, solver=solver)
     return theta.value.flatten()
 
-def clarabel_solve_cbf(a, x_safe  , u_safe  ,
+
+def clarabel_fit_cbf(a, x_safe  , u_safe  ,
                           x_buffer, u_buffer,
                           x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe):
     fv   = vmap(a.dynamics.open_loop_dynamics, in_axes=(0, None))
@@ -279,6 +280,56 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
     phiT = get_phiT(a)
     Dphi = get_Dphi(a)
     C    = a.centers[-1]
+    o    = a.b
+
+    ns = x_safe.shape[0]
+    nb = x_buffer.shape[0]
+    nu = x_unsafe.shape[0]
+
+
+    P = sparse.csc_array(np.eye(C.shape[0]))
+    q = np.zeros(C.shape[0])
+    b = np.concatenate([-gamma_safe  *np.ones(ns) + o*np.ones(ns),
+                         gamma_unsafe*np.ones(nu) - o*np.ones(nu),
+                        -gamma_dyn*np.ones(ns+nb) + o*np.ones(ns+nb)])
+
+    #A = sparse.csc_array(np.vstack( phiT(x,C),
+    #    DphiT(x,C),)
+
+
+    if u_buffer.shape[0] != 0:
+        A = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
+                                          phiT(x_unsafe,C),
+                                      -((Dphi(x_safe  ,C) @ (fv(x_safe  ,0) + (gv(x_safe  ,0) @   u_safe[:,np.newaxis,:]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_safe  ,C)),
+                                      -((Dphi(x_buffer,C) @ (fv(x_buffer,0) + (gv(x_buffer,0) @ u_buffer[:,np.newaxis,:]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_buffer,C))
+                                      ))
+                            )
+    else:
+        A = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
+                                          phiT(x_unsafe,C),
+                                      -((Dphi(x_safe,C) @ (fv(x_safe,0) + (gv(x_safe,0) @ u_safe[:,np.newaxis,:]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_safe,C))
+                                      ))
+                            )
+    cone = [clarabel.NonnegativeConeT(A.shape[0])]
+
+    print("problem done building")
+    settings = clarabel.DefaultSettings()
+    solver   = clarabel.DefaultSolver(P, q, A, b, cone, settings)
+    solution = solver.solve()
+    return solution.x
+
+
+def clarabel_solve_cbf(a, x_safe  , u_safe  ,
+                          x_buffer, u_buffer,
+                          x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe, centers=None):
+    fv   = vmap(a.dynamics.open_loop_dynamics, in_axes=(0, None))
+    gv   = vmap(a.dynamics.control_jacobian  , in_axes=(0, None))
+    phiT = get_phiT(a)
+    Dphi = get_Dphi(a)
+    if centers is None:
+        C = a.centers[-1]
+    else:
+        C = centers
     o    = a.b
 
     ns = x_safe.shape[0]

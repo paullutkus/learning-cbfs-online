@@ -177,6 +177,41 @@ def plot_angles(a, grid, hjb_grid, obs_dict, pos=None):
     return
 
 
+def _plot_angles(a, centers, thetas, grid, hjb_grid, obs_dict, pos=None):
+    h = get_h(a)
+    s = a.spacing
+
+    fig, ax = plt.subplots(figsize=(12,12))
+
+    plt.rc('xtick', labelsize=14)                                                
+    plt.rc('ytick', labelsize=14)                                                
+
+    for x in grid:                                                               
+        if obs_dict[tuple(np.round(x, 3))] == 0:                               
+            ax.plot(x[0], x[1], color="black", marker=".", linestyle="none")   
+            A = pat.Annulus(x, s/2, s/2-0.01)
+            ax.add_patch(A)
+            pt = np.array([x[0], x[1], 0])
+            idx = hjb_grid.nearest_index(pt)[:2]
+            for theta in hjb_grid.states[idx[0], idx[1], :, -1]:
+                #theta = hjb_grid.states[idx[0], idx[1], i][-1]
+                hx, _ = h(np.array([x[0], x[1], theta]), centers, thetas)
+                if hx <= 0:
+                    B = pat.Wedge(  x, s/2, 360/(2*np.pi)*theta - 0.1, 360/(2*np.pi)*theta + 0.1, width=s/2, color='r')  
+                    ax.add_patch(B)
+                #else:
+                #    B = pat.Wedge(  x, s/2, 360/(2*np.pi)*theta - 1, 360/(2*np.pi)*theta + 1, width=s/2, color='b')  
+                #    ax.add_patch(B)
+        else:
+            ax.plot(x[0], x[1], color="red"   , marker="*", linestyle="none") 
+    if pos is not None:
+        B = pat.Wedge(  pos[:2], s/2, 360/(2*np.pi)*pos[-1] - 1, 360/(2*np.pi)*pos[-1] + 1, width=s/2, color='limegreen')
+        ax.add_patch(B)
+
+    plt.show()
+    return
+
+
 def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict):
     h = get_h(a)
     s = a.spacing
@@ -201,3 +236,33 @@ def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict):
     #ax.plot(final_pos[0], final_pos[1], color="orange", marker="*")
 
     return
+
+
+
+######################
+### Set Operations ###
+######################
+
+def union(X, Y):
+    return np.unique(np.vstack((X,Y)), axis=0)
+
+def intersection(X, Y):
+    I = []
+    for x in X:
+        for y in Y:
+            if np.linalg.norm(x-y) <= 1e-3:
+                I.append(x)
+    return np.unique(np.array(I), axis=0)
+
+def complement(X, Y):
+    C = []
+    for x in X:
+        skip=False
+        for y in Y:
+            if np.linalg.norm(x-y) <= 1e-3:
+                skip=True
+        if not skip:
+            C.append(x)
+    return np.unique(np.array(C), axis=0)
+        
+

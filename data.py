@@ -31,7 +31,8 @@ def make_rectangle(height=1, width=1, density=200, unsafe_margin=0.25, center=(0
     in_height = lambda y : True if (y <= height / 2 + center[1]) and (y >= -height / 2 + center[1]) else False
     obs_dict  = {tuple(np.round(pt.astype(np.float32), 3)) : 1 if not (in_width(pt[0]) and in_height(pt[1])) else 0 for pt in grid}
 
-    is_obs = lambda x: not (in_width(x[0]) and in_height(x[1]))
+    get_is_obs = lambda in_width, in_height: lambda x: not (in_width(x[0]) and in_height(x[1]))
+    is_obs = get_is_obs(in_width, in_height)
     
     # Compute params
     lo = (ax_1[ 0], ax_2[ 0])
@@ -78,15 +79,19 @@ def insert_shape(pos, grid, obs_dict, shape='triangle', scale=0.2, theta=0):
             x_scale = 1/scale * x_trans
             if np.linalg.norm(x_scale) <= 1:
                 obs_dict[tuple(np.round(x.astype(np.float32), 3))] = 4
-        is_obs = lambda x : np.linalg.norm(1/scale*(x-np.array(pos))) <= 1
+        get_is_obs = lambda scale, pos: lambda x: np.linalg.norm(1/scale*(x-np.array(pos))) <= 1
+        is_obs = get_is_obs(scale, pos)
 
     return obs_dict, is_obs
 
 
 def check_obs(x, obs_f):
     is_obs = False
-    for f in obs_f:
-        is_obs = is_obs or f(x)
+    if list is type(obs_f):
+        for f in obs_f:
+            is_obs = is_obs or f(x)
+    else: 
+        is_obs = obs_f(x)
     return is_obs
 
 
@@ -96,7 +101,17 @@ def check_obs(x, obs_f):
 ##################
 
 
-def local_grid(pos, gparams, obs_funcs, rx, thn, mult=1):
+def get_gparams(data, hjb_grid):
+    dx = abs(hjb_grid.states[0, 0, 0, 0] - hjb_grid.states[1, 0, 0, 0])
+    xmax  = np.max(data[:, 0])
+    xmin  = np.min(data[:, 0])
+    ymax  = np.max(data[:, 1])
+    ymin  = np.min(data[:, 1])
+    params = (xmax, xmin, ymax, ymin, dx)
+    return params
+
+
+def local_grid(pos, gparams, obs_funcs, thn, out_func=None, rx=None, mult=1):
     xmax, xmin, ymax, ymin, dx = gparams
     xn  = int(np.round((xmax - xmin) / dx)) + 1
     yn  = int(np.round((ymax - ymin) / dx)) + 1
@@ -110,8 +125,10 @@ def local_grid(pos, gparams, obs_funcs, rx, thn, mult=1):
     safe_pts   = []
     obs_dict   = {}
     grid = local_hjb_grid.states[...,0,:2].reshape(-1, 2)
+    if rx is not None and out_func is None:
+        out_func = lambda x: np.linalg.norm(x - pos[:2], ord=2) > rx
     for x in grid:
-        if check_obs(x, obs_funcs) or np.linalg.norm(x - pos[:2], ord=2) > rx:
+        if check_obs(x, obs_funcs) or out_func(x):
             unsafe_pts.append(x)
             obs_dict[tuple(np.round(np.array(x).astype(np.float32), 3))] = 1
         else:
@@ -165,7 +182,7 @@ def plot_data(grid, obs_dict, extra=None, size=12):
     return None
 
 
-def plot_angle_data(centers, grid, obs_dict, s, safe=None, buffer=None, unsafe=None, samples=None): #grid, hjb_grid, obs_dict):
+def plot_angle_data(centers, grid, obs_dict, s, safe=None, buffer=None, unsafe=None, samples=None, title=None): #grid, hjb_grid, obs_dict):
     #h = get_h_curr(a)
     #s = a.spacing 
 
@@ -219,6 +236,8 @@ def plot_angle_data(centers, grid, obs_dict, s, safe=None, buffer=None, unsafe=N
         else:
             ax.plot(x[0], x[1], color="red"   , marker="*", linestyle="none") 
     '''
+    if title is not None:
+        ax.set_title(title)
     plt.show()
     return
 

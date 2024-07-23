@@ -2,7 +2,7 @@ import matplotlib.pyplot   as plt
 import hj_reachability     as hj
 import numpy               as np
 from   utils           import kd_tree_detection, cylindrical_kd_tree_detection
-from   tst_optim       import get_h_curr, get_Dphi
+from   optim           import get_h_curr, get_Dphi
 from   controls        import get_xd_mpc, get_safety_filter
 from   scipy.integrate import solve_ivp, odeint
 from   utils           import plot_cbf
@@ -50,7 +50,7 @@ class Agent:
         get_in_scan_f = lambda pos, sensor_radius: lambda x: np.linalg.norm(x[:2] - pos[:2]) <= sensor_radius
         in_scan_f = get_in_scan_f(self.pos, self.sensor_radius)
         for x in self.grid:
-            if in_scan_f(x): #np.linalg.norm(x[:2] - self.pos[:2]) <= self.sensor_radius:
+            if in_scan_f(x):
                 if self.obs_dict[tuple(np.round(x, 3))] == 0:
                     scan_safe.append(x)
                 else:
@@ -62,15 +62,17 @@ class Agent:
         return scan_safe, scan_unsafe
 
 
-    def scan_hjb(self, V, hjb_grid):
+    def scan_hjb(self, V, hjb_grid, bicycle=False):
         states = []
         for x in self.grid:
             if np.linalg.norm(x[:2] - self.pos[:2]) <= self.sensor_radius:
-                x = np.repeat(x.reshape(1, -1), hjb_grid.states.shape[2], axis=0)
-                x = np.hstack((x, np.array(hjb_grid.coordinate_vectors[2]).reshape(-1, 1)))
-                for pt in x:
-                    states.append(pt)
-                #states.append(x)
+                if bicycle:
+                    x = np.repeat(x.reshape(1, -1), hjb_grid.states.shape[2], axis=0)
+                    x = np.hstack((x, np.array(hjb_grid.coordinate_vectors[2]).reshape(-1, 1)))
+                    for pt in x:
+                        states.append(pt)
+                else:
+                    states.append(x)
         scan_safe   = []
         scan_unsafe = []
         for x in states:
@@ -84,7 +86,7 @@ class Agent:
         return (scan_safe, scan_unsafe)
 
 
-    def sample(self, outer_radius, grid=None, hjb_grid=None, hjb=False):
+    def sample(self, outer_radius, grid=None, hjb_grid=None, hjb=False, bicycle=False):
         samples = []
         if grid is None:
             grid = self.grid
@@ -93,12 +95,9 @@ class Agent:
         get_is_obs = lambda pos, sensor_radius, outer_radius: lambda x: (np.linalg.norm(x[:2] - pos[:2]) >= sensor_radius) and \
                                                                         (np.linalg.norm(x[:2] - pos[:2]) <=  outer_radius)
         is_obs = get_is_obs(self.pos, self.sensor_radius, outer_radius)
-
         for x in grid:
-            #r = np.linalg.norm(x[:2] - self.pos[:2])
-            #if (r >= self.sensor_radius) and (r <= outer_radius):
             if is_obs(x):
-                if hjb:
+                if bicycle:
                     ntheta = hjb_grid.states.shape[2]
                     x = np.repeat(x.reshape(1, -1), ntheta, axis=0)
                     x = np.hstack((x, np.array(hjb_grid.coordinate_vectors[2]).reshape(-1, 1)))
@@ -107,11 +106,11 @@ class Agent:
                 else:
                     samples.append(x)
         samples = np.array(samples)
-        #dx1 = abs(grid[0,1] - grid[1,1])
-        #print("dx1:", dx1)
-        #print("dx2:", dx)
         if hjb:
-            dx = abs(hjb_grid.states[0, 0, 0, 0] - hjb_grid.states[1, 0, 0, 0])
+            if bicycle:
+                dx = abs(hjb_grid.states[0, 0, 0, 0] - hjb_grid.states[1, 0, 0, 0])
+            else:
+                dx = abs(hjb_grid.states[0, 0, 0] - hjb_grid.states[1, 0, 0])
             xmax  = np.max(samples[:, 0])
             xmin  = np.min(samples[:, 0])
             ymax  = np.max(samples[:, 1])
@@ -119,24 +118,23 @@ class Agent:
             params = (xmax, xmin, ymax, ymin, dx)
             return samples, params, is_obs
         else:
-            return samples
+            return samples, is_obs
 
 
-    def make_buffer(self, scan_safe, k, pct, hjb=False):
+    def make_buffer(self, scan_safe, k, pct, bicycle=False):
         # k  : number of neighbors to consider
         # pct: cutoff percentile
-
-        if hjb:
+        if bicycle:
             (x_buffer, x_safe, _) = cylindrical_kd_tree_detection(scan_safe, k, pct)
         else:
             (x_buffer, x_safe, _) = kd_tree_detection(scan_safe, k, pct=pct)
         return (x_buffer, x_safe)
 
 
-    def get_local_V(self, gparams, obs_funcs, thn, rx=None, out_func=None, T=500, mult=1):
+    def get_local_V(self, gparams, obs_funcs, thn=None, rx=None, out_func=None, T=500, mult=1):
 
         local_hjb_grid, sdf, grid = local_grid(self.pos, gparams, obs_funcs,
-                                               thn     , rx=rx,   out_func=out_func, mult=mult)
+                                               thn=thn , rx=rx,   out_func=out_func, mult=mult)
         solver_settings = hj.SolverSettings.with_accuracy("very_high",
                                                           hamiltonian_postprocessor=hj.solver.backwards_reachable_tube,
                                                           value_postprocessor      =hj.solver.static_obstacle(sdf))
@@ -147,14 +145,24 @@ class Agent:
 
         plt.jet()
         plt.figure(figsize=(13, 8))
-        plt.contourf(local_hjb_grid.coordinate_vectors[0], local_hjb_grid.coordinate_vectors[1], local_V[:, :, 0].T, levels=30)
-        plt.colorbar()
-        plt.contour(local_hjb_grid.coordinate_vectors[0],
-                    local_hjb_grid.coordinate_vectors[1],
-                    local_V[:, :, 0].T,
-                    levels=0,
-                    colors="black",
-                    linewidths=3)
+        if thn is not None:
+            plt.contourf(local_hjb_grid.coordinate_vectors[0], local_hjb_grid.coordinate_vectors[1], local_V[:, :, 0].T, levels=30)
+            plt.colorbar()
+            plt.contour(local_hjb_grid.coordinate_vectors[0],
+                        local_hjb_grid.coordinate_vectors[1],
+                        local_V[:, :, 0].T,
+                        levels=0,
+                        colors="black",
+                        linewidths=3)
+        else:
+            plt.contourf(local_hjb_grid.coordinate_vectors[0], local_hjb_grid.coordinate_vectors[1], local_V.T, levels=30)
+            plt.colorbar()
+            plt.contour(local_hjb_grid.coordinate_vectors[0],
+                        local_hjb_grid.coordinate_vectors[1],
+                        local_V.T,
+                        levels=0,
+                        colors="black",
+                        linewidths=3)
 
         return local_V, local_hjb_grid
 
@@ -217,11 +225,8 @@ class Agent:
         print("h is", h(self.pos)[0])
         print("start time is", self.t)
 
-        #if use_cbf_mpc:
-        #    closed_loop = lambda t, y: f(y,0) + g(y,0) @ cbf_mpc(y, target, T, self.thetas, self.centers)
-        #else:
         safe_controller = lambda y: safety_filter(y, xd_mpc(y, target, T=T))
-        closed_loop     = lambda y, t: f(y,0) + g(y,0) @ safe_controller(y)
+        closed_loop     = lambda y, t: f(y,0) + g(y,0) @ safe_controller(y) # switch order if using odeint
         ODE_RHS         = lambda y, u: f(y,0) + g(y,0) @ u
 
         boundary           = lambda t, y: h(y)[0] - tol
@@ -233,9 +238,13 @@ class Agent:
             traj = []; traj.append(y)
             Dphi = get_Dphi(self)
             while h(y)[0] - tol > 0:
-                #print("hmax", h(y)[0])
-                #hy, i = h(y)
-                #print("norm grad", np.linalg.norm(self.thetas[i].T @ Dphi(y, self.centers[i])))
+                ### h info for debug ###
+                '''
+                print("hmax", h(y)[0])
+                hy, i = h(y)
+                print("norm grad", np.linalg.norm(self.thetas[i].T @ Dphi(y, self.centers[i])))
+                '''
+                ########################
                 u = safety_filter(y, xd_mpc(y, target, T=T))
                 y = dynamics_RK4(y, u, ODE_RHS, DT)
                 traj.append(y)
@@ -244,7 +253,7 @@ class Agent:
             x0 = self.pos
             tend=tend
             teval = np.linspace(0, tend, num=100000)
-            sol = solve_ivp(closed_loop, (0, tend), x0, teval=teval, events=boundary) #teval=teval, dense_output=False)
+            sol = solve_ivp(closed_loop, (0, tend), x0, teval=teval, events=boundary) #dense_output=True)
             #sol = odeint(closed_loop, x0, teval)
             traj = sol.y.T
 

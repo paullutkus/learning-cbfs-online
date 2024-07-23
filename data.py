@@ -67,7 +67,7 @@ def insert_shape(pos, grid, obs_dict, shape='triangle', scale=0.2, theta=0):
         for k, x in enumerate(grid):
             x_trans = x - np.array(pos)
             x_scale = 1/scale * x_trans
-            rot = np.array([[np.cos(-theta), -np.sin(-theta)],
+            rot = np.array([[np.cos(-theta),-np.sin(-theta)],
                             [np.sin(-theta), np.cos(-theta)]])
             x_derotated = rot @ x_scale
             if np.linalg.norm(x_derotated, ord=np.inf) <= 1:
@@ -102,7 +102,8 @@ def check_obs(x, obs_f):
 
 
 def get_gparams(data, hjb_grid):
-    dx = abs(hjb_grid.states[0, 0, 0, 0] - hjb_grid.states[1, 0, 0, 0])
+    d = data.shape[-1] # system dimension
+    dx = abs(hjb_grid.states[(0,)+d*(0,)] - hjb_grid.states[(1,)+d*(0,)])
     xmax  = np.max(data[:, 0])
     xmin  = np.min(data[:, 0])
     ymax  = np.max(data[:, 1])
@@ -111,20 +112,29 @@ def get_gparams(data, hjb_grid):
     return params
 
 
-def local_grid(pos, gparams, obs_funcs, thn, out_func=None, rx=None, mult=1):
+def local_grid(pos, gparams, obs_funcs, thn=None, out_func=None, rx=None, mult=1):
     xmax, xmin, ymax, ymin, dx = gparams
     xn  = int(np.round((xmax - xmin) / dx)) + 1
     yn  = int(np.round((ymax - ymin) / dx)) + 1
-    lo = jnp.array((xmin, ymin, 0      ))
-    hi = jnp.array((xmax, ymax, 2*np.pi))
-    n  = jnp.array((mult*xn, mult*yn, thn))
+    if thn is not None:
+        lo  = jnp.array((xmin, ymin, 0      ))
+        hi  = jnp.array((xmax, ymax, 2*np.pi))
+        n = jnp.array((mult*xn, mult*yn, thn))
+        local_hjb_grid = hj.Grid.from_lattice_parameters_and_boundary_conditions(hj.sets.Box(lo, hi), n, periodic_dims=2)
 
-    local_hjb_grid = hj.Grid.from_lattice_parameters_and_boundary_conditions(hj.sets.Box(lo, hi), n, periodic_dims=2)
+    else:
+        lo  = jnp.array((xmin, ymin))
+        hi  = jnp.array((xmax, ymax))
+        n = jnp.array((mult*xn, mult*yn))
+        local_hjb_grid = hj.Grid.from_lattice_parameters_and_boundary_conditions(hj.sets.Box(lo, hi), n)
 
     unsafe_pts = []
     safe_pts   = []
     obs_dict   = {}
-    grid = local_hjb_grid.states[...,0,:2].reshape(-1, 2)
+    if thn is not None:
+        grid = local_hjb_grid.states[...,0,:2].reshape(-1, 2)
+    else:
+        grid = local_hjb_grid.states.reshape(-1, 2)
     if rx is not None and out_func is None:
         out_func = lambda x: np.linalg.norm(x - pos[:2], ord=2) > rx
     for x in grid:
@@ -138,13 +148,23 @@ def local_grid(pos, gparams, obs_funcs, thn, out_func=None, rx=None, mult=1):
     safe_pts   = np.array(safe_pts)
 
     sdf = np.empty(local_hjb_grid.states.shape[:-1])
-    for i in range(n[0]):
-        for j in range(n[1]):
-            if obs_dict[tuple(np.round(np.array(local_hjb_grid.states[i, j, 0, :2]), 3))] != 0:
-                sdf[i, j, :] = -np.min(np.linalg.norm(safe_pts   - local_hjb_grid.states[i, j, 0, :2], axis=1))
-            else:
-                sdf[i, j, :] =  np.min(np.linalg.norm(unsafe_pts - local_hjb_grid.states[i, j, 0, :2], axis=1))
-    plt.scatter(grid[:,0], grid[:,1], c=sdf[...,0].reshape(-1, 1))
+    if thn is not None:
+        for i in range(n[0]):
+            for j in range(n[1]):
+                if obs_dict[tuple(np.round(np.array(local_hjb_grid.states[i, j, 0, :2]), 3))] != 0:
+                    sdf[i, j, :] = -np.min(np.linalg.norm(safe_pts   - local_hjb_grid.states[i, j, 0, :2], axis=1))
+                else:
+                    sdf[i, j, :] =  np.min(np.linalg.norm(unsafe_pts - local_hjb_grid.states[i, j, 0, :2], axis=1))
+        plt.scatter(grid[:,0], grid[:,1], c=sdf[...,0].reshape(-1, 1))
+    else:
+        for i in range(n[0]):
+            for j in range(n[1]):
+                if obs_dict[tuple(np.round(np.array(local_hjb_grid.states[i, j, :2]), 3))] != 0:
+                    sdf[i, j] = -np.min(np.linalg.norm(safe_pts   - local_hjb_grid.states[i, j, :2], axis=1))
+                else:
+                    sdf[i, j] =  np.min(np.linalg.norm(unsafe_pts - local_hjb_grid.states[i, j, :2], axis=1))
+        plt.scatter(grid[:,0], grid[:,1], c=sdf.reshape(-1, 1))
+
     plt.show()
     return local_hjb_grid, sdf, grid
 
@@ -182,14 +202,11 @@ def plot_data(grid, obs_dict, extra=None, size=12):
     return None
 
 
-def plot_angle_data(centers, grid, obs_dict, s, safe=None, buffer=None, unsafe=None, samples=None, title=None): #grid, hjb_grid, obs_dict):
-    #h = get_h_curr(a)
-    #s = a.spacing 
+def plot_angle_data(centers, grid, obs_dict, s, safe=None, buffer=None, unsafe=None, samples=None, title=None): 
 
     fig, ax = plt.subplots(figsize=(12,12))
-
-    plt.rc('xtick', labelsize=14)                                                
-    plt.rc('ytick', labelsize=14)                                                
+    plt.rc('xtick', labelsize=14)
+    plt.rc('ytick', labelsize=14)
 
     for x in grid:
         if obs_dict[tuple(np.round(x, 3))] == 0:
@@ -215,27 +232,6 @@ def plot_angle_data(centers, grid, obs_dict, s, safe=None, buffer=None, unsafe=N
     for x in centers:
         ax.plot(x[0], x[1], color="black", marker=".", linestyle="none")
 
-       
-    '''
-    for x in grid:                                                               
-        if obs_dict[tuple(np.round(x, 3))] == 0:                               
-            ax.plot(x[0], x[1], color="black", marker=".", linestyle="none")   
-            A = pat.Annulus(x, s/2, s/2-0.01)
-            ax.add_patch(A)
-            pt = np.array([x[0], x[1], 0])
-            idx = hjb_grid.nearest_index(pt)[:2]
-            for theta in hjb_grid.states[idx[0], idx[1], :, -1]:
-                #theta = hjb_grid.states[idx[0], idx[1], i][-1]
-                hx, _ = h(np.array([x[0], x[1], theta]))
-                if hx <= 0:
-                    B = pat.Wedge(  x, s/2, 360/(2*np.pi)*theta - 0.1, 360/(2*np.pi)*theta + 0.1, width=s/2, color='r')  
-                    ax.add_patch(B)
-                #else:
-                #    B = pat.Wedge(  x, s/2, 360/(2*np.pi)*theta - 1, 360/(2*np.pi)*theta + 1, width=s/2, color='b')  
-                #    ax.add_patch(B)
-        else:
-            ax.plot(x[0], x[1], color="red"   , marker="*", linestyle="none") 
-    '''
     if title is not None:
         ax.set_title(title)
     plt.show()
@@ -256,13 +252,5 @@ def generate_trajecotries(a, V, grid):
     gv = vmap(g, in_axes=(0, None))
 
     ODE_RHS = lambda y, u: fv(y,0) + np.linalg.norm(grid.grad_values)
-
-
-    
-
-
-
-
-
-
+    pass
 

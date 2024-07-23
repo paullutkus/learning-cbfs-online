@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-
 from hj_reachability import dynamics
 from hj_reachability import sets
 

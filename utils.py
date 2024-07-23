@@ -3,7 +3,7 @@ import matplotlib.pyplot  as plt
 import numpy as np
 from scipy.stats       import rankdata
 from sklearn.neighbors import KDTree, BallTree
-from tst_optim import get_h, get_h_curr
+from optim import get_h, get_h_curr
 
 
 
@@ -71,13 +71,10 @@ def cylindrical_kd_tree_detection(data, k, pct):
 
 def plot_cbf(a, centers, thetas, traj=None, target=None, obstacles=None, angle=None):
 
-    #######################
-    # agent-specific info #
-    #######################
+    ### agent-specific info ###
     width   = a.width
-    s = a.s
+    #s = a.s
     h = get_h(a)
-    #######################
 
     n  = 500
     r  = np.ceil(width/2)
@@ -90,7 +87,6 @@ def plot_cbf(a, centers, thetas, traj=None, target=None, obstacles=None, angle=N
                 hvals[i,j], _ = h(np.array([x, y, angle]), centers, thetas)
             else:
                 hvals[i,j], _ = h(np.array([x, y]), centers, thetas)
-
     #hvals = vmap(lambda s1: vmap(lambda s2: h_joint(jnp.array([s1, s2]), thetas, centers))(x2))(x1)
 
     plt.rc('xtick', labelsize=14)
@@ -99,19 +95,12 @@ def plot_cbf(a, centers, thetas, traj=None, target=None, obstacles=None, angle=N
     contour_plot = plt.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T)
     plt.clabel(contour_plot, inline=1, fontsize=10)
 
-    # These add the dashed lines through (1,1)
-    #plt.plot(np.linspace(-2, 1, num=20), np.ones((20,)), 'k:', linewidth=2)
-    #plt.plot(np.array([1, 1]), np.array([-2, 1]), 'k:', linewidth=1.5)
-
     if traj is not None:
         plt.plot(traj[:,0], traj[:,1], 'ro')
-    
     if target is not None:
         plt.plot(target[0], target[1], "m*")
-
     if obstacles is not None:
         plt.plot(obstacles[:,0], obstacles[:,1], "r.")
-
     if angle is not None:
         plt.title("theta="+str(angle))
 
@@ -128,14 +117,13 @@ def plot_cbf(a, centers, thetas, traj=None, target=None, obstacles=None, angle=N
                 zz[i,j], _ = h(np.array([x, y, angle]), centers, thetas)
             else:
                 zz[i,j], _ = h(np.array([x, y]), centers, thetas)
-    '''
     #zz = vmap(lambda arg1, arg2: vmap(lambda s1, s2: h_joint(jnp.array([s1, s2]), thetas, centers), in_axes=(0, 0))(arg1, arg2), in_axes=(0,0))(xx, yy)
+    '''
 
-    fig = plt.figure(figsize=(12, 12))#plt.figure(figsize=(16, 10))
+    fig = plt.figure(figsize=(12, 12))
     from mpl_toolkits.mplot3d import Axes3D
     ax = fig.add_subplot(111, projection='3d')
-    ax.view_init(elev=60, azim=-30)
-    #ax.view_init(elev=35, azim=-30)
+    ax.view_init(elev=60, azim=-30) # prev (35, -30)
     ax.plot_surface(xx, yy, hvals)
     plt.show()
     print("max h", np.max(hvals))
@@ -194,16 +182,13 @@ def _plot_angles(a, centers, thetas, grid, hjb_grid, obs_dict, pos=None):
             pt = np.array([x[0], x[1], 0])
             idx = hjb_grid.nearest_index(pt)[:2]
             for theta in hjb_grid.states[idx[0], idx[1], :, -1]:
-                #theta = hjb_grid.states[idx[0], idx[1], i][-1]
                 hx, _ = h(np.array([x[0], x[1], theta]), centers, thetas)
                 if hx <= 0:
                     B = pat.Wedge(  x, s/2, 360/(2*np.pi)*theta - 0.1, 360/(2*np.pi)*theta + 0.1, width=s/2, color='r')  
                     ax.add_patch(B)
-                #else:
-                #    B = pat.Wedge(  x, s/2, 360/(2*np.pi)*theta - 1, 360/(2*np.pi)*theta + 1, width=s/2, color='b')  
-                #    ax.add_patch(B)
         else:
             ax.plot(x[0], x[1], color="red"   , marker="*", linestyle="none") 
+
     if pos is not None:
         B = pat.Wedge(  pos[:2], s/2, 360/(2*np.pi)*pos[-1] - 1, 360/(2*np.pi)*pos[-1] + 1, width=s/2, color='limegreen')
         ax.add_patch(B)
@@ -212,28 +197,47 @@ def _plot_angles(a, centers, thetas, grid, hjb_grid, obs_dict, pos=None):
     return
 
 
-def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict):
+def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, obstacles=None):
     h = get_h(a)
     s = a.spacing
+    
+    # system dimension
+    d = curr_data.shape[-1]
 
-    #print("len curr_data is", len(curr_data))
-    for x in curr_data:
-        hx, _ = h(x, centers, thetas)
-        if hx <= 0:
-            B = pat.Wedge(x[:2], s/2, 360/(2*np.pi)*x[2] - 0.1, 360/(2*np.pi)*x[2] + 0.1, width=s/2, color='r')
-            ax.add_patch(B)
-        else:
-            B = pat.Wedge(x[:2], s/2, 360/(2*np.pi)*x[2] - 0.1, 360/(2*np.pi)*x[2] + 0.1, width=s/2, color='c')
-            ax.add_patch(B)
-    for x in grid:
-        if obs_dict[tuple(np.round(x, 3))] != 0:
-            ax.plot(x[0], x[1], color="red"  , marker="*", linestyle="none")
-        else:
-            ax.plot(x[0], x[1], color="black", marker=".", linestyle="none")
+    if d == 3:
+        for x in curr_data:
+            hx, _ = h(x, centers, thetas)
+            if hx <= 0:
+                B = pat.Wedge(x[:2], s/2, 360/(2*np.pi)*x[2] - 0.1, 360/(2*np.pi)*x[2] + 0.1, width=s/2, color='r')
+                ax.add_patch(B)
+            else:
+                B = pat.Wedge(x[:2], s/2, 360/(2*np.pi)*x[2] - 0.1, 360/(2*np.pi)*x[2] + 0.1, width=s/2, color='c')
+                ax.add_patch(B)
+        for x in grid:
+            if obs_dict[tuple(np.round(x, 3))] != 0:
+                ax.plot(x[0], x[1], color="red"  , marker="*", linestyle="none")
+            else:
+                ax.plot(x[0], x[1], color="black", marker=".", linestyle="none")
+        ax.plot(traj[:,0], traj[:,1], color='magenta', marker=".")
 
-    ax.plot(traj[:,0], traj[:,1], color='magenta', marker=".")
-    #ax.plot( init_pos[0],  init_pos[1], color="yellow", marker="*")
-    #ax.plot(final_pos[0], final_pos[1], color="orange", marker="*")
+    elif d == 2:
+        width = a.width
+        n  = 500
+        r  = np.ceil(width/2)
+        x1 = np.linspace(-r, r, num=n)
+        x2 = np.linspace(-r, r, num=n) 
+        hvals = np.empty((n, n))
+        for i, x in enumerate(x1):
+            for j, y in enumerate(x2):
+                hvals[i,j], _ = h(np.array([x, y]), centers, thetas)
+        #hvals = vmap(lambda s1: vmap(lambda s2: h_joint(jnp.array([s1, s2]), thetas, centers))(x2))(x1)
+
+        plt.rc('xtick', labelsize=14)
+        plt.rc('ytick', labelsize=14)
+        contour_plot  = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T)
+        ax.plot(obstacles[:,0], obstacles[:,1], "r.")
+        ax.plot(traj[:,0], traj[:,1], color='magenta', marker=".")
+        plt.clabel(contour_plot, inline=1, fontsize=8)
 
     return
 
@@ -243,8 +247,10 @@ def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict):
 ### Set Operations ###
 ######################
 
+
 def union(X, Y):
     return np.unique(np.vstack((X,Y)), axis=0)
+
 
 def intersection(X, Y):
     I = []
@@ -254,7 +260,8 @@ def intersection(X, Y):
                 I.append(x)
     return np.unique(np.array(I), axis=0)
 
-def complement(X, Y):
+
+def difference(X, Y):
     C = []
     for x in X:
         skip=False

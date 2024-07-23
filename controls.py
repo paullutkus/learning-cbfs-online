@@ -2,7 +2,7 @@ import numpy as np
 import cvxpy as cp
 import hj_reachability as hj
 from scipy.integrate import solve_ivp
-from tst_optim       import get_Dphi, get_h
+from optim           import get_Dphi, get_h
 from jax             import vmap
 
 
@@ -61,13 +61,12 @@ def get_safety_filter(a, eps=0):
         #^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         #print("state:", x)
         #print("desired control:", ud)
-
         cons = []
         u    = cp.Variable(udim)
         ue   = u - ud
         obj  = cp.Minimize( cp.quad_form(ue, np.eye(udim)) )
         hmax, i = h(x, centers, thetas)
-        #print("hmax", hmax)
+        #print("hmax", hmax) 
         cons.append(thetas[i].T @ Dphi(x, centers[i]) @ (f(x,0) + g(x,0) @ u) + \
                     hmax >= eps)
         cons.append(u <=  umax)
@@ -90,12 +89,8 @@ def hjb_controls(a, x, grid, V, verbose=False):
     umax     = a.umax
 
     g  = dynamics.control_jacobian
-    #gv = vmap(g, in_axes=(0, None))
     gx = g(x, 0)
-    #print("interpolate output", grid.interpolate(V, x))
     dV  = grid.interpolate(grid.grad_values(V), x)
-    #idx = grid.nearest_index(x)
-    #dV  = grid.grad_values(V)[tuple(idx)]
 
     u   = cp.Variable(gx.shape[1])
     c   = dV.T @ gx @ u
@@ -122,6 +117,7 @@ def hjb_controls(a, x, grid, V, verbose=False):
         
     return u.value
 
+
 def hjb_controls_parallel(a, X, grid, V, verbose=False):
     dynamics = a.dynamics
     utype    = a.utype
@@ -135,19 +131,18 @@ def hjb_controls_parallel(a, X, grid, V, verbose=False):
     dVX  = interpv(grid.grad_values(V), X)
 
     u   = cp.Variable(X.shape[0] * gX.shape[-1])
-    c   = np.einsum('ij,ij->i', dVX, gX.squeeze())
+    c   = np.einsum('ijk,ikl->ijl', dVX[:,np.newaxis,:], gX).squeeze().reshape(-1)
     cTu = c.T @ u 
 
     if utype == "box":
-        P = np.diag(X.shape[0]*( 1,))
-        N = np.diag(X.shape[0]*(-1,))
-        A = np.vstack([np.vstack((*gX.shape[-1]*(P[i,:],), *gX.shape[-1]*(N[i,:],))) for i in range(X.shape[0])])
+        P = np.diag(X.shape[0]*gX.shape[-1]*( 1,))
+        N = np.diag(X.shape[0]*gX.shape[-1]*(-1,))
+        A = np.vstack([np.vstack((P[i,:], N[i,:],)) for i in range(X.shape[0]*gX.shape[-1])])
         b   = np.tile((*gX.shape[-1]*(umax,),*gX.shape[-1]*(umax,)), X.shape[0])
         cns = [A@u <= b]
 
     prb = cp.Problem(cp.Maximize(cTu), cns)
     prb.solve(verbose=verbose, solver='CLARABEL')
-
-    return u.value.reshape(-1, 1)
+    return u.value.reshape(-1, gX.shape[-1])
 
 

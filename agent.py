@@ -23,7 +23,8 @@ class Agent:
                                                              utype   ="ball",
                                                              umax    = 1,
                                                              spacing = None,
-                                                             solver  ='MOSEK'):
+                                                             obstacles=None,
+                                                             solver  ='CLARABEL'):
         self.dynamics      = dynamics
         self.pos           = pos
         self.grid          = grid
@@ -40,8 +41,8 @@ class Agent:
         self.solver        = solver
         self.thetas        = []
         self.centers       = []
+        self.obstacles     = obstacles
         self.Nc_max        = None
-        self.obstacles     = None
 
 
     def scan(self, ret_in_scan_f=False):

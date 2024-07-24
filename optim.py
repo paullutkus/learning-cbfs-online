@@ -344,43 +344,42 @@ def get_learning_cbfs_lagrangian(a, x_safe  ,
     gv   = vmap(a.dynamics.control_jacobian  , in_axes=(0, None))
 
     def L(theta):
-        print(    np.sign(np.maximum(0, gamma_dyn  - theta.T @ Dphi(x_safe  ) @ fv(x_safe  ,0)[...,np.newaxis] - \
-                  np.linalg.norm(np.einsum("ijk->ikj", gv(x_safe  ,0)) @ np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta[:,np.newaxis], ord=2, axis=1) -\
-                  phi(x_safe  ) @ theta[:,np.newaxis] - b)).shape)
-        print( (-phi(x_safe)[...,np.newaxis] - Dphi(x_safe) @ fv(x_safe,0)[...,np.newaxis] -\
-                  Dphi(x_safe) @ np.einsum("ijk->ikj", gv(x_safe,0)) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta[:,np.newaxis] /\
-                  np.linalg.norm( np.einsum("ijk->ikj", gv(x_safe,0)) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta[:,np.newaxis], ord=2, axis=1, keepdims=True)).shape)
-        print((lam_dyn  * (np.sign(np.maximum(0, gamma_dyn  - theta.T @ Dphi(x_safe  ) @ fv(x_safe  ,0)[...,np.newaxis] - \
-                  np.linalg.norm(np.einsum("ijk->ikj", gv(x_safe  ,0)) @ np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta[:,np.newaxis], ord=2, axis=1) -\
-                  phi(x_safe  ) @ theta[:,np.newaxis] - b)) * (-phi(x_safe)[...,np.newaxis] - Dphi(x_safe) @ fv(x_safe,0)[...,np.newaxis] -\
-                  Dphi(x_safe) @ np.einsum("ijk->ikj", gv(x_safe,0)) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta[:,np.newaxis] /\
-                  np.linalg.norm( np.einsum("ijk->ikj", gv(x_safe,0)) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta[:,np.newaxis], ord=2, axis=1, keepdims=True))).sum()).shape)
+        S  = gamma_safe - phi(x_safe) @ theta[:,np.newaxis] - b
+        Ds = gamma_dyn  - (theta.T @ Dphi(x_safe  )[:,np.newaxis,:] @ fv(x_safe  ,0)[...,np.newaxis]).squeeze() -\
+                np.linalg.norm(np.einsum("ijk->ikj", gv(x_safe  ,0)) @ np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta, ord=2, axis=1).squeeze() -\
+                (phi(x_safe  ) @ theta[:,np.newaxis]).squeeze() - b
+        Db = gamma_dyn  - (theta.T @ Dphi(x_buffer)[:,np.newaxis,:] @ fv(x_buffer,0)[...,np.newaxis]).squeeze() -\
+                np.linalg.norm(np.einsum("ijk->ikj", gv(x_buffer,0)) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta, ord=2, axis=1).squeeze() -\
+                (phi(x_buffer) @ theta[:,np.newaxis]).squeeze() - b
+        U = phi(x_unsafe) @ theta[:,np.newaxis] + b + gamma_unsafe
+        dhDs = np.linalg.norm(np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta[:,np.newaxis], ord=2, axis=1)
+        dhDb = np.linalg.norm(np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta[:,np.newaxis], ord=2, axis=1)
+
+        dS_dT  = -phi(x_safe)
+        dDs_dT = -phi(x_safe) - (Dphi(x_safe) @ fv(x_safe,0)[...,np.newaxis]).squeeze() - \
+                 Dphi(x_safe) @ gv(x_safe,0) @ np.einsum("ijk->ikj", gv(x_safe,0)) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta /\
+                 np.linalg.norm(np.einsum("ijk->ikj", gv(x_safe,0)) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta, ord=2, axis=1, keepdims=True)
+        dDb_dT = -phi(x_buffer) - (Dphi(x_buffer) @ fv(x_buffer,0)[...,np.newaxis]).squeeze() - \
+                 Dphi(x_buffer) @ gv(x_buffer,0) @ np.einsum("ijk->ikj", gv(x_buffer,0)) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta /\
+                 np.linalg.norm(np.einsum("ijk->ikj", gv(x_buffer,0)) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta, ord=2, axis=1, keepdims=True)
+        dU_dT  = phi(x_unsafe)
+        ddhDs_dT = Dphi(x_safe  ) @ np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta / np.linalg.norm(np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta, ord=2, axis=1, keepdims=True)
+        ddhDb_dT = Dphi(x_buffer) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta / np.linalg.norm(np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta, ord=2, axis=1, keepdims=True)
+
         return ((theta**2).sum() +
-                 lam_safe  * np.maximum(0, gamma_safe - phi(x_safe) @ theta[:,np.newaxis] - b).sum() +\
-                 lam_dyn   * np.maximum(0, gamma_dyn  - theta.T @ Dphi(x_safe  ) @ fv(x_safe  ,0)[...,np.newaxis] -\
-                  np.linalg.norm(np.einsum("ijk->ikj", gv(x_safe  ,0)) @ np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta[:,np.newaxis], ord=2, axis=1) -\
-                  phi(x_safe  ) @ theta[:,np.newaxis] - b).sum() +\
-                 lam_dyn   * np.maximum(0, gamma_dyn  - theta.T @ Dphi(x_buffer) @ fv(x_buffer,0)[...,np.newaxis] -\
-                  np.linalg.norm(np.einsum("ijk->ikj", gv(x_buffer,0)) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta[:,np.newaxis], ord=2, axis=1) -\
-                  phi(x_buffer) @ theta[:,np.newaxis] - b).sum() +\
-                 lam_unsafe* np.maximum(0, phi(x_unsafe) @ theta[:,np.newaxis] + b + gamma_unsafe).sum() +\
-                 lam_dh    * np.linalg.norm(np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta[:,np.newaxis], ord=2, axis=1).sum() +\
-                 lam_dh    * np.linalg.norm(np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta[:,np.newaxis], ord=2, axis=1).sum()
+                 lam_safe  * np.maximum(0, S ).sum() +\
+                 lam_dyn   * np.maximum(0, Ds).sum() +\
+                 lam_dyn   * np.maximum(0, Db).sum() +\
+                 lam_unsafe* np.maximum(0, U ).sum() +\
+                 lam_dh    * dhDs.sum() +\
+                 lam_dh    * dhDs.sum()
                , 2*theta +\
-                 lam_safe * (np.sign(np.maximum(0, gamma_safe - phi(x_safe) @ theta[:,np.newaxis] - b)) * -phi(x_safe)).sum() +\
-                 lam_dyn  * (np.sign(np.maximum(0, gamma_dyn  - theta.T @ Dphi(x_safe  ) @ fv(x_safe  ,0)[...,np.newaxis] - \
-                  np.linalg.norm(np.einsum("ijk->ikj", gv(x_safe  ,0)) @ np.einsum("ijk->ikj", Dphi(x_safe  )) @ theta[:,np.newaxis], ord=2, axis=1) -\
-                  phi(x_safe  ) @ theta[:,np.newaxis] - b)) * (-phi(x_safe)[...,np.newaxis] - Dphi(x_safe) @ fv(x_safe,0)[...,np.newaxis] -\
-                  Dphi(x_safe) @ np.einsum("ijk->ikj", gv(x_safe,0)) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta[:,np.newaxis] /\
-                  np.linalg.norm( np.einsum("ijk->ikj", gv(x_safe,0)) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta[:,np.newaxis], ord=2, axis=1, keepdims=True))).sum() +\
-                 lam_dyn  * (np.sign(np.maximum(0, gamma_dyn  - theta.T @ Dphi(x_buffer) @ fv(x_buffer  ,0)[...,np.newaxis] - \
-                  np.linalg.norm(np.einsum("ijk->ikj", gv(x_buffer,0)) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta[:,np.newaxis], ord=2, axis=1) -\
-                  phi(x_buffer) @ theta[:,np.newaxis] - b)) * (-phi(x_buffer)[...,np.newaxis] - Dphi(x_buffer) @ fv(x_buffer,0)[...,np.newaxis] -\
-                  Dphi(x_buffer) @ np.einsum("ijk->ikj", gv(x_buffer,0)) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta[:,np.newaxis] /\
-                  np.linalg.norm( np.einsum("ijk->ikj", gv(x_buffer,0)) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta[:,np.newaxis], ord=2, axis=1, keepdims=True))).sum() +\
-                lam_unsafe* (np.sign(np.maximum(0, phi(x_unsafe) @ theta[:,np.newaxis] + b + gamma_unsafe)) * phi(x_safe)).sum() + \
-                lam_dh    * (Dphi(x_safe) @ np.einsum("ijk->ikj", Dphi(x_safe)) @ theta[:,np.newaxis] / np.linalg.norm(Dphi(x_safe) @ theta[:,np.newaxis], ord=2, axis=1)).sum() + \
-                lam_dh    * (Dphi(x_buffer) @ np.einsum("ijk->ikj", Dphi(x_buffer)) @ theta[:,np.newaxis] / np.linalg.norm(Dphi(x_buffer) @ theta[:,np.newaxis], ord=2, axis=1)).sum())
+                 lam_safe * (np.sign(np.maximum(0, S )) * dS_dT ).sum(axis=0) +\
+                 lam_dyn  * (np.sign(np.maximum(0, Ds))[:,np.newaxis] * dDs_dT).sum(axis=0) +\
+                 lam_dyn  * (np.sign(np.maximum(0, Db))[:,np.newaxis] * dDb_dT).sum(axis=0) +\
+                 lam_unsafe* (np.sign(np.maximum(0, U )) * dU_dT ).sum(axis=0) +\
+                 lam_dh    * (ddhDs_dT).sum(axis=0) + \
+                 lam_dh    * (ddhDb_dT).sum(axis=0))
 
     return L
 

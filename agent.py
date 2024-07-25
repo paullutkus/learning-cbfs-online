@@ -22,6 +22,7 @@ class Agent:
                                                              t       = 0,
                                                              utype   ="ball",
                                                              umax    = 1,
+                                                             gamma   = 1,
                                                              spacing = None,
                                                              obstacles=None,
                                                              solver  ='CLARABEL'):
@@ -37,6 +38,7 @@ class Agent:
         self.t             = t
         self.utype         = utype
         self.umax          = umax
+        self.gamma         = gamma
         self.spacing       = spacing
         self.solver        = solver
         self.thetas        = []
@@ -63,15 +65,21 @@ class Agent:
         return scan_safe, scan_unsafe
 
 
-    def scan_hjb(self, V, hjb_grid, bicycle=False):
+    def scan_hjb(self, V, hjb_grid, bicycle=False, boundary_condition=False):
         states = []
+        x2pi   = []
+        x0     = []
         for x in self.grid:
             if np.linalg.norm(x[:2] - self.pos[:2]) <= self.sensor_radius:
                 if bicycle:
-                    x = np.repeat(x.reshape(1, -1), hjb_grid.states.shape[2], axis=0)
-                    x = np.hstack((x, np.array(hjb_grid.coordinate_vectors[2]).reshape(-1, 1)))
-                    for pt in x:
+                    X = np.repeat(x.reshape(1, -1), hjb_grid.states.shape[2], axis=0)
+                    X = np.hstack((X, np.array(hjb_grid.coordinate_vectors[2]).reshape(-1, 1)))
+                    for pt in X:
                         states.append(pt)
+                    states.append(np.array([x[0], x[1], 2*np.pi]).astype(np.float32))
+                    if boundary_condition:
+                        x2pi.append(states[-1])
+                        x0.append(X[0])
                 else:
                     states.append(x)
         scan_safe   = []
@@ -84,11 +92,17 @@ class Agent:
                 scan_unsafe.append(x)
         scan_safe   = np.array(scan_safe)
         scan_unsafe = np.array(scan_unsafe)
+        x2pi        = np.array(x2pi)
+        x0          = np.array(x0)
+        if boundary_condition:
+            return scan_safe, scan_unsafe, x2pi, x0
         return (scan_safe, scan_unsafe)
 
 
-    def sample(self, outer_radius, grid=None, hjb_grid=None, hjb=False, bicycle=False):
+    def sample(self, outer_radius, grid=None, hjb_grid=None, hjb=False, bicycle=False, boundary_condition=False):
         samples = []
+        x2pi    = []
+        x0      = []
         if grid is None:
             grid = self.grid
         else:
@@ -100,13 +114,19 @@ class Agent:
             if is_obs(x):
                 if bicycle:
                     ntheta = hjb_grid.states.shape[2]
-                    x = np.repeat(x.reshape(1, -1), ntheta, axis=0)
-                    x = np.hstack((x, np.array(hjb_grid.coordinate_vectors[2]).reshape(-1, 1)))
-                    for pt in x:
+                    X = np.repeat(x.reshape(1, -1), ntheta, axis=0)
+                    X = np.hstack((X, np.array(hjb_grid.coordinate_vectors[2]).reshape(-1, 1)))
+                    for pt in X:
                         samples.append(pt)
+                    samples.append(np.array([x[0], x[1], 2*np.pi]).astype(np.float32))
+                    if boundary_condition:
+                        x2pi.append(samples[-1])
+                        x0.append(X[0])
                 else:
                     samples.append(x)
         samples = np.array(samples)
+        x2pi    = np.array(x2pi)
+        x0      = np.array(x0)
         if hjb:
             if bicycle:
                 dx = abs(hjb_grid.states[0, 0, 0, 0] - hjb_grid.states[1, 0, 0, 0])
@@ -117,7 +137,10 @@ class Agent:
             ymax  = np.max(samples[:, 1])
             ymin  = np.min(samples[:, 1])
             params = (xmax, xmin, ymax, ymin, dx)
-            return samples, params, is_obs
+            if boundary_condition:
+                return samples, params, is_obs, x2pi, x0
+            else:
+                return samples, params, is_obs
         else:
             return samples, is_obs
 
@@ -237,8 +260,14 @@ class Agent:
         if manual:
             y = self.pos
             traj = []; traj.append(y)
+            usig = []
             Dphi = get_Dphi(self)
-            while h(y)[0] - tol > 0:
+            N = int(tend / DT)
+            for  i in range(N):
+                if np.linalg.norm(y - target) <= 1e-2:
+                    break
+                if  h(y)[0] - tol <= 0:
+                    break
                 ### h info for debug ###
                 '''
                 print("hmax", h(y)[0])
@@ -249,7 +278,9 @@ class Agent:
                 u = safety_filter(y, xd_mpc(y, target, T=T))
                 y = dynamics_RK4(y, u, ODE_RHS, DT)
                 traj.append(y)
+                usig.append(u)
             traj = np.array(traj)
+            usig = np.array(usig)
         else: 
             x0 = self.pos
             tend=tend
@@ -270,4 +301,5 @@ class Agent:
         print("new position is" , self.pos)
         print("h is now", h(self.pos)[0])
         print("new time is", self.t)
-        return traj
+        return traj, usig
+

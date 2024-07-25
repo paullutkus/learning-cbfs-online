@@ -45,6 +45,8 @@ def phiT(x, C, bf, s): # is a column vector
     if bf == 32: 
         phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
         return phi
+    if bf == 51:
+        phi = np.maximum(0, s - r)**5 * (1 + 5*r)/30
 
 
 def get_phiT(a):
@@ -64,6 +66,9 @@ def get_phiT(a):
         if bf == 32: 
             phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
             return phi
+        if bf == 51:
+            phi = np.maximum(0, s - r)**5 * (1 + 5*r)/30
+
     return phiT
 
 
@@ -85,6 +90,8 @@ def get_phiT_curr(a):
         if bf == 32:    
             phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
             return phi
+        if bf == 51:
+            phi = np.maximum(0, s - r)**5 * (1 + 5*r)/30
     return phi
 
 
@@ -107,8 +114,13 @@ def get_Dphi(a):
             Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
             return Dphi
         if bf == 32:
-            dwdr = (msk*(-6*(s-r)**5 * (1 + 18*r + 35*r**2)  /1680 + \
+            dwdr = (msk*(-6*(s-r)**5 * (1 + 18*r + 35*r**2)  /1680 +\
                                        (    18   + 70*r   )  /1680) )
+            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
+            return Dphi
+        if bf == 51:
+            dwdr = msk*(-5*(s-r)**4 * (1+5*r)     / 30 +\
+                         4*np.maximum(0, s-r)**5 / 30) 
             Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
             return Dphi
     return Dphi
@@ -136,6 +148,11 @@ def get_Dphi_curr(a):
         if bf == 32:
             dwdr = (msk*(-6*(s-r)**5 * (1 + 18*r + 35*r**2)  /1680 + \
                                        (    18   + 70*r   )  /1680) )
+            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
+            return Dphi
+        if bf == 51:
+            dwdr = msk*(-5*(s-r)**4 * (1+5*r)     / 30 +\
+                         4*np.maximum(0, s-r)**5 / 30)
             Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
             return Dphi
     return Dphi
@@ -281,7 +298,7 @@ def clarabel_fit_cbf(a, x_safe  , u_safe  ,
 
 def clarabel_solve_cbf(a, x_safe  , u_safe  ,
                           x_buffer, u_buffer,
-                          x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe, centers=None):
+                          x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe, centers=None, x2pi=None, x0=None):
     fv   = vmap(a.dynamics.open_loop_dynamics, in_axes=(0, None))
     gv   = vmap(a.dynamics.control_jacobian  , in_axes=(0, None))
     phiT = get_phiT(a)
@@ -291,6 +308,7 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
     else:
         C = centers
     o    = a.b
+    gamma= a.gamma
 
     ns = x_safe.shape[0]
     nb = x_buffer.shape[0]
@@ -302,24 +320,44 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
     b = np.concatenate([-gamma_safe  *np.ones(ns) + o*np.ones(ns),
                          gamma_unsafe*np.ones(nu) - o*np.ones(nu),
                         -gamma_dyn*np.ones(ns+nb) + o*np.ones(ns+nb)])
+    #print("x2pi shape", x2pi.shape)
+    #print("x0 shape", x0.shape)
+    if x2pi is not None:
+        b2 = np.zeros(x2pi.shape[0])
+        b = np.concatenate([b, b2])
+    print("b shape", b.shape)
     if u_buffer.shape[0] != 0:
-        A = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
-                                          phiT(x_unsafe,C),
-                                      -((Dphi(x_safe  ,C) @ (fv(x_safe  ,0) + (gv(x_safe  ,0) @   u_safe[...,np.newaxis]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_safe  ,C)),
-                                      -((Dphi(x_buffer,C) @ (fv(x_buffer,0) + (gv(x_buffer,0) @ u_buffer[...,np.newaxis]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_buffer,C))
-                                      ))
-                            )
+        A1 = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
+                                           phiT(x_unsafe,C),
+                                       -((Dphi(x_safe  ,C) @ (fv(x_safe  ,0) + (gv(x_safe  ,0) @   u_safe[...,np.newaxis]).squeeze())[...,np.newaxis]).squeeze() + gamma*phiT(x_safe  ,C)),
+                                       -((Dphi(x_buffer,C) @ (fv(x_buffer,0) + (gv(x_buffer,0) @ u_buffer[...,np.newaxis]).squeeze())[...,np.newaxis]).squeeze() + gamma*phiT(x_buffer,C))
+                                       ))
+                             )
     else:
-        A = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
-                                          phiT(x_unsafe,C),
-                                      -((Dphi(x_safe,C) @ (fv(x_safe,0) + (gv(x_safe,0) @ u_safe[...,np.newaxis]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_safe,C))
-                                      ))
-                            )
-    cone = [clarabel.NonnegativeConeT(A.shape[0])]
+        A1 = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
+                                           phiT(x_unsafe,C),
+                                       -((Dphi(x_safe,C) @ (fv(x_safe,0) + (gv(x_safe,0) @ u_safe[...,np.newaxis]).squeeze())[...,np.newaxis]).squeeze() + gamma*phiT(x_safe,C))
+                                       ))
+                             )
+    #print("A shape", A.shape)
+    #print("def shape",Dphi(x2pi,C).shape)
+    #print("T shape", Dphi(x2pi,C).T.shape)
+    if x2pi is not None:
+        A2 = sparse.csc_array(phiT(x2pi,C) - phiT(x0,C))
+#                            Dphi(x2pi,C) - Dphi(x0,C)))
+        A = sparse.csc_array(sparse.vstack((A1, A2)))
+    else:
+        A = A1
+        #print("A shape", A.shape)
+     
+    if x2pi is not None:
+        cones = [clarabel.NonnegativeConeT(A1.shape[0]), clarabel.ZeroConeT(A2.shape[0])]
+    else:
+        cones = [clarabel.NonnegativeConeT(A1.shape[0])]
 
     print("problem done building")
     settings = clarabel.DefaultSettings()
-    solver   = clarabel.DefaultSolver(P, q, A, b, cone, settings)
+    solver   = clarabel.DefaultSolver(P, q, A, b, cones, settings)
     solution = solver.solve()
     return solution.x
 

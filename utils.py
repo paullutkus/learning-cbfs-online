@@ -4,6 +4,7 @@ import numpy as np
 from scipy.stats       import rankdata
 from sklearn.neighbors import KDTree, BallTree
 from optim import get_h, get_h_curr
+from distances import cylindrical_metric
 
 
 
@@ -47,16 +48,13 @@ def kd_tree_detection(data, k, eta=None, pct=None):
     return Z_N, Z_Nc, counts
 
 
-def cylindrical_metric(x, y):
-    d = y - x
-    return np.sqrt(d[0]**2 + d[1]**2 + np.minimum(abs(d[2]), 2*np.pi-abs(d[2]))**2)
-
-
 def cylindrical_kd_tree_detection(data, k, pct):
     ball        = BallTree(data, metric='pyfunc', func=cylindrical_metric)
     _, knn_inds = ball.query(data, k=k)
     flat_inds   = knn_inds.flatten()
     counts      = np.bincount(flat_inds)
+    print("counts", counts)
+    print("pct", pct)
     nb_thresh   = np.quantile(counts, pct)
     bd          = data[counts <  nb_thresh]
     _int        = data[counts >= nb_thresh]
@@ -69,7 +67,7 @@ def cylindrical_kd_tree_detection(data, k, pct):
 ################
 
 
-def plot_cbf(a, centers, thetas, traj=None, target=None, obstacles=None, angle=None):
+def plot_cbf(a, centers, thetas, traj=None, nom_traj=None, target=None, obstacles=None, angle=None, line=None):
 
     ### agent-specific info ###
     width   = a.width
@@ -95,8 +93,13 @@ def plot_cbf(a, centers, thetas, traj=None, target=None, obstacles=None, angle=N
     contour_plot = plt.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T)
     plt.clabel(contour_plot, inline=1, fontsize=10)
 
+    if line is not None:
+        plt.plot(np.linspace(-r, r, num=50), line*np.ones((50,)), 'k:', linewidth=2)
+        #plt.plot(np.array([1, 1]), np.array([-2, 1]), 'k:', linewidth=1.5)
     if traj is not None:
         plt.plot(traj[:,0], traj[:,1], 'ro')
+    if nom_traj is not None:
+        plt.plot(nom_traj[:,0], nom_traj[:,1], 'go')
     if target is not None:
         plt.plot(target[0], target[1], "m*")
     if obstacles is not None:

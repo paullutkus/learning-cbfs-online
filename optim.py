@@ -4,6 +4,7 @@ import casadi    as ca
 import clarabel
 from   jax       import vmap
 from   scipy     import sparse
+from   distances import cylindrical_metric
 
 
 
@@ -11,8 +12,9 @@ def get_h(a):
     b  = a.b
     bf = a.bf
     s  = a.s 
+    thscl = a.theta_scale
     def h(x, C, theta):
-        h_vec = np.einsum('ijk,jk->j', phiT(x, C, bf, s), theta)
+        h_vec = np.einsum('ijk,jk->j', phiT(x, C, bf, s, thscl), theta)
         i = np.argmax(h_vec)
         return h_vec[i] + b, i
     return h
@@ -23,16 +25,20 @@ def get_h_curr(a):
     bf    = a.bf
     s     = a.s 
     C     = np.array(a.centers)
+    thscl = a.theta_scale
     theta = np.array(a.thetas)
     def h(x):
-        h_vec = np.einsum('ijk,jk->j', phiT(x, C, bf, s), theta)
+        h_vec = np.einsum('ijk,jk->j', phiT(x, C, bf, s, thscl), theta)
         i = np.argmax(h_vec)
         return h_vec[i] + b, i
     return h
 
 
-def phiT(x, C, bf, s): # is a column vector
-    r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
+def phiT(x, C, bf, s, thscl=None): 
+    if thscl is not None:
+        r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], a=thscl, phi_eval=True)
+    else:
+        r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
     if bf == 0:
         phi = np.e**(-s*r**2)
         return phi
@@ -52,8 +58,12 @@ def phiT(x, C, bf, s): # is a column vector
 def get_phiT(a):
     bf = a.bf
     s  = a.s
+    thscl = a.theta_scale
     def phiT(x, C): # is a column vector
-        r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
+        if thscl is not None:
+            r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], a=thscl, phi_eval=True)
+        else:
+            r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
         if bf == 0:
             phi =  np.e**(-s*r**2)
             return phi
@@ -76,8 +86,13 @@ def get_phiT_curr(a):
     bf = a.bf
     s  = a.s
     C  = a.centers[-1]
+    xdim = C.shape[1]
+    thscl = a.theta_scale
     def phi(x): # is a column vector
-        r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
+        if thscl is not None:
+            r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], a=thscl, phi_eval=True)
+        else:
+            r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
         if bf == 0:
             phi = np.e**(-s*r**2)
             return phi
@@ -98,8 +113,12 @@ def get_phiT_curr(a):
 def get_Dphi(a):
     bf = a.bf
     s  = a.s
+    thscl = a.theta_scale
     def Dphi(x, C): # is a row vector 
-        r   = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
+        if thscl is not None:
+            r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], phi_eval=True)
+        else:
+            r   = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
         msk = np.sign(np.maximum(0, s - r))
         if bf == 0:
             dwdr = -4*s*r*np.e**(-s*r**2)
@@ -130,8 +149,12 @@ def get_Dphi_curr(a):
     bf = a.bf
     s  = a.s
     C  = a.centers[-1]
+    thscl = a.theta_scale
     def Dphi(x): # is a row vector 
-        r   = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
+        if thscl is not None:
+            r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], phi_eval=True)
+        else:
+            r   = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
         msk = np.sign(np.maximum(0, s - r))
         if bf == 0:
             dwdr = -4*s*r*np.e**(-s*r**2)

@@ -6,7 +6,7 @@ from optim           import get_Dphi, get_h
 from jax             import vmap
 
 
-def get_xd_mpc(a):
+def get_xd_mpc(a, dt=0.01, bicycle=False):
     dynamics = a.dynamics
     g        = dynamics.control_jacobian
     umax     = a.umax
@@ -14,7 +14,7 @@ def get_xd_mpc(a):
     solver   = a.solver
 
     def xd_mpc(xi, xd, T=0.5):
-        dt   = 0.05
+        #dt   = 0.01
         k    = int(T / dt)
         A    = Df(xi)
         B    =  g(xi, 0)
@@ -23,7 +23,7 @@ def get_xd_mpc(a):
         udim =  B.shape[1]
         x    = cp.Variable((k, xdim))
         xe   = x - xd.reshape(1, -1)
-        u    = cp.Variable((k, udim))    
+        u    = cp.Variable((k, udim))
 
         cons = []
         cons.append(x[0] == xi)
@@ -32,7 +32,13 @@ def get_xd_mpc(a):
             cons.append(u[t] <=  umax)
             cons.append(u[t] >= -umax)
 
-        obj  = cp.Minimize( cp.quad_form(cp.vec(xe), np.eye(k*xdim)) + 0*cp.quad_form(cp.vec(u), np.eye(k*udim)) )
+        if bicycle:
+            #_diag = np.ones(k*xdim)
+            _diag = np.array(k*(1, 1, 0))
+            P = np.diag(_diag)
+        else:
+            P = np.eye(k*xdim)
+        obj  = cp.Minimize(cp.quad_form(cp.vec(xe), P) + 0*cp.quad_form(cp.vec(u), np.eye(k*udim)) )
         prob = cp.Problem(obj, cons)
         prob.solve(solver=solver, verbose=False)
         return u.value[0,:]
@@ -49,6 +55,7 @@ def get_safety_filter(a, eps=0):
     thetas   = np.array(a.thetas)
     centers  = np.array(a.centers)
     s        = a.s
+    gamma    = a.gamma
     h        = get_h(a)
     Dphi     = get_Dphi(a)
     solver  = a.solver
@@ -67,8 +74,9 @@ def get_safety_filter(a, eps=0):
         obj  = cp.Minimize( cp.quad_form(ue, np.eye(udim)) )
         hmax, i = h(x, centers, thetas)
         #print("hmax", hmax) 
+        #print("x", x)
         cons.append(thetas[i].T @ Dphi(x, centers[i]) @ (f(x,0) + g(x,0) @ u) + \
-                    hmax >= eps)
+                    gamma*hmax >= eps)
         cons.append(u <=  umax)
         cons.append(u >= -umax)
 
@@ -81,6 +89,40 @@ def get_safety_filter(a, eps=0):
         return u.value
     
     return safety_filter
+
+def get_cbvf_safety_filter(a, grid, V):
+    dynamics = a.dynamics
+    f        = dynamics.open_loop_dynamics
+    g        = dynamics.control_jacobian
+    umax     = a.umax
+    udim     = dynamics.disturbance_space.lo.shape[0]
+    s        = a.s
+    gamma    = a.gamma
+    solver  = a.solver
+
+    def cbvf_safety_filter(x, ud):
+        cons = []
+        u    = cp.Variable(udim)
+        ue   = u - ud
+        obj  = cp.Minimize( cp.quad_form(ue, np.eye(udim)) )
+        #hmax, i = h(x, centers, thetas)
+        #print("hmax", hmax) 
+        #print("x", x)
+        cons.append(grid.interpolate(grid.grad_values(V), x) @ (f(x,0) + g(x,0) @ u) + \
+                    gamma*grid.interpolate(V, x) >= 0)
+        cons.append(u <=  umax)
+        cons.append(u >= -umax)
+
+        prob = cp.Problem(obj, cons)
+        prob.solve(solver=solver, verbose=False)
+        if u.value is not None:
+            if (u.value > umax).any():
+                print("val", u.value, "max", umax)
+        #print("safe u", u.value)
+        return u.value
+    
+    return cbvf_safety_filter
+
 
 
 def hjb_controls(a, x, grid, V, verbose=False):

@@ -3,7 +3,7 @@ import hj_reachability     as hj
 import numpy               as np
 from   utils           import kd_tree_detection, cylindrical_kd_tree_detection
 from   optim           import get_h_curr, get_Dphi
-from   controls        import get_xd_mpc, get_safety_filter
+from   controls        import get_xd_mpc, get_safety_filter, get_cbvf_safety_filter
 from   scipy.integrate import solve_ivp, odeint
 from   utils           import plot_cbf
 from   data            import local_grid
@@ -35,6 +35,7 @@ class Agent:
         self.bf            = bf # csrbf order
         self.b             = b  # csrbf offset
         self.s             = s  # csrbf zeroing distance
+        self.theta_scale   = None # theta dim scale so `s` acts uniformly on all axes w.r.t (x,y)
         self.t             = t
         self.utype         = utype
         self.umax          = umax
@@ -237,16 +238,21 @@ class Agent:
         return
 
 
-    def goto(self, target, T=0.5, tend=100, tol=0.05, use_cbf_mpc=False, angle=None, manual=True, DT=0.05, eps=0):
+    def goto(self, target, T=0.5, tend=100, tol=0.05, use_cbf_mpc=False, angle=None, manual=True, DT=0.05, mpc_DT=0.01, eps=0, cbvf=False, grid=None, V=None, bicycle=False):
         f = self.dynamics.open_loop_dynamics
         g = self.dynamics.control_jacobian
 
         h             = get_h_curr(self)
-        xd_mpc        = get_xd_mpc(self)
-        safety_filter = get_safety_filter(self, eps=eps)
+        xd_mpc        = get_xd_mpc(self, dt=mpc_DT, bicycle=bicycle)
+
+        # if true, dont use CBF, just CBVF obtained by solving PDE
+        if cbvf:
+            safety_filter = get_cbvf_safety_filter(self, grid, V)
+        else:
+            safety_filter = get_safety_filter(self, eps=eps)
 
         print("position is", self.pos)
-        print("h is", h(self.pos)[0])
+        #print("h is", h(self.pos)[0])
         print("start time is", self.t)
 
         safe_controller = lambda y: safety_filter(y, xd_mpc(y, target, T=T))
@@ -260,14 +266,21 @@ class Agent:
         if manual:
             y = self.pos
             traj = []; traj.append(y)
+            unf  = []; unf.append(y); z = y
             usig = []
             Dphi = get_Dphi(self)
             N = int(tend / DT)
             for  i in range(N):
                 if np.linalg.norm(y - target) <= 1e-2:
                     break
-                if  h(y)[0] - tol <= 0:
-                    break
+
+                # appropriate value function to decide early stopping
+                if cbvf:
+                    if grid.interpolate(V, y) - tol <= 0:
+                        break
+                else:
+                    if  h(y)[0] - tol <= 0:
+                        break
                 ### h info for debug ###
                 '''
                 print("hmax", h(y)[0])
@@ -275,11 +288,15 @@ class Agent:
                 print("norm grad", np.linalg.norm(self.thetas[i].T @ Dphi(y, self.centers[i])))
                 '''
                 ########################
-                u = safety_filter(y, xd_mpc(y, target, T=T))
+                u_nom = xd_mpc(y, target, T=T)
+                u = safety_filter(y, u_nom)
                 y = dynamics_RK4(y, u, ODE_RHS, DT)
+                #z = dynamics_RK4(z, u_nom, ODE_RHS, DT)
                 traj.append(y)
+                unf.append(z)
                 usig.append(u)
             traj = np.array(traj)
+            unf  = np.array(unf)
             usig = np.array(usig)
         else: 
             x0 = self.pos
@@ -289,8 +306,21 @@ class Agent:
             #sol = odeint(closed_loop, x0, teval)
             traj = sol.y.T
 
-        if angle is not None:
-            plot_cbf(self, np.array(self.centers), np.array(self.thetas), traj=traj, target=target, angle=angle, obstacles=self.obstacles)
+        if cbvf:
+            plt.figure(figsize=(14, 12))
+            plt.contourf(grid.coordinate_vectors[0], grid.coordinate_vectors[1], V[:, :, 0].T, levels=30)
+            plt.colorbar()
+            plt.contour(grid.coordinate_vectors[0],
+                        grid.coordinate_vectors[1],
+                        V[:, :, 0].T,
+                        levels=0,
+                        colors="black",
+                        linewidths=3)
+            plt.plot(traj[:,0], traj[:,1], "co")
+            plt.plot(self.obstacles[:,0], self.obstacles[:,1], "ro", linestyle="none")
+            plt.show()
+        elif angle is not None:
+            plot_cbf(self, np.array(self.centers), np.array(self.thetas), traj=traj, target=target, angle=angle, obstacles=self.obstacles, nom_traj=unf)
         else:
             plot_cbf(self, np.array(self.centers), np.array(self.thetas), traj=traj, target=target, obstacles=self.obstacles)
 

@@ -372,6 +372,14 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
     else:
         A = A1
         #print("A shape", A.shape)
+
+    n0 = 0
+    for i in range(A.shape[0]):
+        for j in range(A.shape[1]):
+            if A[i, j] == 0:
+                n0 += 1
+    print("num zero elems in A:", n0)
+
      
     if x2pi is not None:
         cones = [clarabel.NonnegativeConeT(A1.shape[0]), clarabel.ZeroConeT(A2.shape[0])]

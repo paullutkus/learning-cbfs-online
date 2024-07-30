@@ -319,6 +319,29 @@ def clarabel_fit_cbf(a, x_safe  , u_safe  ,
     return solution.x
 
 
+# fit cbf or cbvf data by inverting system of equations
+def fit_cbf_w_inv(a, X, b):
+    phiT = get_phiT(a)
+    A = phiT(X, X)
+    theta = np.linalg.inv(A) @ b
+    return theta
+
+# gradient descent to tune fitted weights
+def gradient_descent(a, theta, it, eps, tol, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe,\
+                     lam_safe, lam_dyn, lam_unsafe, lam_dh):
+    L = get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, lam_safe, lam_dyn, lam_unsafe, lam_dh, gamma_safe, gamma_dyn, gamma_unsafe) 
+    v, grad = L(theta)
+    for i in range(it):
+        theta_ip1 = theta - eps * grad
+        v_ip1, grad_ip1 = L(theta_ip1)
+        print("it", i, "loss:", v_ip1)
+        #if v - v_ip1 <= tol:
+        #    break
+        v = v_ip1
+        grad = grad_ip1
+    return theta
+
+
 def clarabel_solve_cbf(a, x_safe  , u_safe  ,
                           x_buffer, u_buffer,
                           x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe, centers=None, x2pi=None, x0=None):
@@ -392,16 +415,103 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
     solution = solver.solve()
     return solution.x
 
-
-def get_learning_cbfs_lagrangian(a, x_safe  ,
-                                    x_buffer, 
-                                    x_unsafe, lam_safe  ,
+def get_learning_cbfs_lagrangian(a, x_safe  , u_safe  ,
+                                    x_buffer, u_buffer,
+                                    x_unsafe, lam_safe,
                                               lam_dyn   ,
                                               lam_unsafe,
                                               lam_dh    , gamma_safe,
                                                           gamma_dyn ,
                                                           gamma_unsafe,
                                                           centers=None):
+    if centers is None:
+        C = a.centers[-1]
+    else:
+        C = centers
+    phi      = get_phiT(a)
+    Dphi     = get_Dphi(a)
+    dynamics = a.dynamics
+    b        = a.b
+
+    f        = dynamics.open_loop_dynamics
+    g        = dynamics.control_jacobian
+    fv   = vmap(a.dynamics.open_loop_dynamics, in_axes=(0, None))
+    gv   = vmap(a.dynamics.control_jacobian  , in_axes=(0, None))
+
+    # preformat u shapes for vectorized matrix multiplication (ijk),(ikl)->(ijl)
+    u_safe = u_safe.reshape(u_safe.shape[0], u_safe.shape[1], 1)
+    if u_buffer.shape[0] != 0:
+        u_safe = u_buffer.reshape(u_buffer.shape[0], u_buffer.shape[1], 1)
+
+    # M = dim(theta), N = dim(x)
+    safe_L = gamma_safe - (phi(x_safe,C) @ theta[:,np.newaxis]).squeeze() - b # (M x 1)
+    print("safe L shape:", safe_L.shape)
+    safe_dyn_L = gamma_dyn  - (theta[np.newaxis,np.newaxis,:] @ Dphi(x_safe,C) @ (fv(x_safe,0)[...,np.newaxis] + gv(x_safe,0) @ u_safe)).squeeze() -\
+                      (phi(x_safe,C) @ theta[:,np.newaxis]).squeeze() - b
+    print("safe dynamics L shape:", safe_dyn_L.shape)
+    if u_buffer.shape[0] != 0:
+        buffer_dyn_L = gamma_dyn  - (theta[np.newaxis,np.newaxis,:] @ Dphi(x_buffer,C) @ (fv(x_buffer,0)[...,np.newaxis] + gv(x_buffer, 0) @ u_buffer)).squeeze() -\
+                                    (phi(x_buffer,C) @ theta[:,np.newaxis]).squeeze() - b
+        print("buffer dynamics L shape:", buffer_dyn_L.shape) 
+        gnorm_buffer_L = np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi(x_buffer,C), ord=2, axis=2).squeeze()
+        print("buffer grad norm L shape:", gnorm_buffer_L.shape)
+        Dbuffer_dyn_L = -phi(x_buffer,C) - (Dphi(x_buffer,C) @ (fv(x_buffer,0)[...,np.newaxis] + gv(x_buffer,0) @ u_buffer)).squeeze()
+        print("D_buffer_dyn_L shape:", Dbuffer_dyn_L.shape)
+        Dgnorm_buffer_L = (Dphi(x_buffer,C) @ (np.einsum("ijk->ikj", Dphi(x_buffer,C)) @ theta)[...,np.newaxis] /\
+                            np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi(x_buffer,C), ord=2, axis=2, keepdims=True)).squeeze()
+        print("Dgnorm_buffer_L shape", Dgnorm_buffer_L.shape)
+    else:
+        buffer_dyn_L = np.array([0])
+        gnorm_buffer_L = np.array([0])
+        Dbuffer_dyn_L = np.array([0])
+        Dgnorm_buffer_L = np.array([0])
+
+    unsafe_L = (phi(x_unsafe,C) @ theta[:,np.newaxis]).squeeze() + b + gamma_unsafe
+    print("unsafe L shape:", unsafe_L.shape)
+    # norm of gradient
+    gnorm_safe_L = np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi(x_safe,C), ord=2, axis=2).squeeze()
+    print("safe grad norm L shape:", gnorm_safe_L.shape)
+    Dsafe_L = -phi(x_safe,C)
+    print("D_safe_L shape:", Dsafe_L.shape)
+    Dsafe_dyn_L = -phi(x_safe,C) - (Dphi(x_safe,C) @ (fv(x_safe,0)[...,np.newaxis] + gv(x_safe,0) @ u_safe)).squeeze()
+    print("D_safe_dyn_L shape:", Dsafe_dyn_L.shape)
+    Dunsafe_L = phi(x_unsafe,C)
+    print("D_unsafe_L shape:", Dunsafe_L.shape)
+    Dgnorm_safe_L = (Dphi(x_safe,C) @ (np.einsum("ijk->ikj", Dphi(x_safe,C)) @ theta)[...,np.newaxis] /\
+                     np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi(x_safe,C), ord=2, axis=2, keepdims=True)).squeeze()
+    print("Dgnorm_safe_L shape", Dgnorm_safe_L.shape)
+
+
+    def L(theta): 
+        return ((theta**2).sum() +
+                 lam_safe  * np.maximum(0, safe_L).sum() +\
+                 lam_dyn   * np.maximum(0, safe_dyn_L).sum() +\
+                 lam_dyn   * np.maximum(0, buffer_dyn_L).sum() +\
+                 lam_unsafe* np.maximum(0, unsafe_L).sum() +\
+                 lam_dh    * gnorm_safe_L.sum() +\
+                 lam_dh    * gnorm_buffer_L.sum()
+               , 2*theta +\
+                    lam_safe * (np.sign(np.maximum(0, safe_L))[:,np.newaxis] * Dsafe_L).sum(axis=0) +\
+                 lam_dyn  * (np.sign(np.maximum(0, safe_dyn_L))[:,np.newaxis] * Dsafe_dyn_L).sum(axis=0) +\
+                 lam_dyn  * (np.sign(np.maximum(0, buffer_dyn_L))[:,np.newaxis] * Dbuffer_dyn_L).sum(axis=0) +\
+                 lam_unsafe* (np.sign(np.maximum(0, unsafe_L))[:,np.newaxis] * Dunsafe_L ).sum(axis=0) +\
+                 lam_dh    * (Dgnorm_safe_L).sum(axis=0) + \
+                 lam_dh    * (Dgnorm_buffer_L).sum(axis=0))
+
+
+    return L
+
+
+
+def get_learning_cbfs_lagrangian_dualnorm(a, x_safe  ,
+                                             x_buffer, 
+                                             x_unsafe, lam_safe  ,
+                                                       lam_dyn   ,
+                                                       lam_unsafe,
+                                                       lam_dh    , gamma_safe,
+                                                                   gamma_dyn ,
+                                                                   gamma_unsafe,
+                                                                   centers=None):
     if centers is None:
         C = a.centers[-1]
     else:

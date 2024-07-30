@@ -290,7 +290,10 @@ class Agent:
                 ########################
                 u_nom = xd_mpc(y, target, T=T)
                 u = safety_filter(y, u_nom)
-                y = dynamics_RK4(y, u, ODE_RHS, DT)
+                if u is not None:
+                    y = dynamics_RK4(y, u, ODE_RHS, DT)
+                else:
+                    break
                 #z = dynamics_RK4(z, u_nom, ODE_RHS, DT)
                 traj.append(y)
                 unf.append(z)

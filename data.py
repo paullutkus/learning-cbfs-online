@@ -96,9 +96,9 @@ def check_obs(x, obs_f):
 
 
 
-##################
-### Local Grid ###
-##################
+#########################
+### Local Grid  & HJB ###
+#########################
 
 
 def get_gparams(data, hjb_grid):

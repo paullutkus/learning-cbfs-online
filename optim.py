@@ -2,183 +2,16 @@ import numpy     as np
 import cvxpy     as cp
 import casadi    as ca
 import clarabel
+import jax.numpy as jnp
+import jax
 from   jax       import vmap
+from   rbf       import phiT, get_phiT, get_phiT_curr, get_Dphi, get_Dphi_curr, jax_get_phiT, jax_get_phiT_curr, jax_phiT
+from   jax_optim import jax_get_learning_cbfs_lagrangian
 from   scipy     import sparse
 from   distances import cylindrical_metric
 
+import matplotlib.pyplot as plt
 
-
-def get_h(a):
-    b  = a.b
-    bf = a.bf
-    s  = a.s 
-    thscl = a.theta_scale
-    def h(x, C, theta):
-        h_vec = np.einsum('ijk,jk->j', phiT(x, C, bf, s, thscl), theta)
-        i = np.argmax(h_vec)
-        return h_vec[i] + b, i
-    return h
-
-
-def get_h_curr(a):
-    b     = a.b
-    bf    = a.bf
-    s     = a.s 
-    C     = np.array(a.centers)
-    thscl = a.theta_scale
-    theta = np.array(a.thetas)
-    def h(x):
-        h_vec = np.einsum('ijk,jk->j', phiT(x, C, bf, s, thscl), theta)
-        i = np.argmax(h_vec)
-        return h_vec[i] + b, i
-    return h
-
-
-def phiT(x, C, bf, s, thscl=None): 
-    if thscl is not None:
-        r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], a=thscl, phi_eval=True)
-    else:
-        r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
-    if bf == 0:
-        phi = np.e**(-s*r**2)
-        return phi
-    if bf == 2:
-        phi = np.sqrt(s + r**2)
-        return phi
-    if bf == 31:
-        phi = np.maximum(0, s - r)**4 * (1 + 4*r)/20
-        return phi
-    if bf == 32: 
-        phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
-        return phi
-    if bf == 51:
-        phi = np.maximum(0, s - r)**5 * (1 + 5*r)/30
-
-
-def get_phiT(a):
-    bf = a.bf
-    s  = a.s
-    thscl = a.theta_scale
-    def phiT(x, C): # is a column vector
-        if thscl is not None:
-            r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], a=thscl, phi_eval=True)
-        else:
-            r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
-        if bf == 0:
-            phi =  np.e**(-s*r**2)
-            return phi
-        if bf == 2:
-            phi = np.sqrt(s + r**2)
-            return phi
-        if bf == 31:
-            phi = np.maximum(0, s - r)**4 * (1 + 4*r)/20
-            return phi
-        if bf == 32: 
-            phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
-            return phi
-        if bf == 51:
-            phi = np.maximum(0, s - r)**5 * (1 + 5*r)/30
-
-    return phiT
-
-
-def get_phiT_curr(a):
-    bf = a.bf
-    s  = a.s
-    C  = a.centers[-1]
-    xdim = C.shape[1]
-    thscl = a.theta_scale
-    def phi(x): # is a column vector
-        if thscl is not None:
-            r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], a=thscl, phi_eval=True)
-        else:
-            r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
-        if bf == 0:
-            phi = np.e**(-s*r**2)
-            return phi
-        if bf == 2:
-            phi = np.sqrt(s + r**2)
-            return phi
-        if bf == 31:
-            phi = np.maximum(0, s - r)**4 * (1 + 4*r)/20
-            return phi
-        if bf == 32:    
-            phi = np.maximum(0, s - r)**6 * (3 + 18*r + 35*r**2)/1680
-            return phi
-        if bf == 51:
-            phi = np.maximum(0, s - r)**5 * (1 + 5*r)/30
-    return phi
-
-
-def get_Dphi(a):
-    bf = a.bf
-    s  = a.s
-    thscl = a.theta_scale
-    def Dphi(x, C): # is a row vector 
-        if thscl is not None:
-            r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], phi_eval=True)
-        else:
-            r   = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
-        msk = np.sign(np.maximum(0, s - r))
-        if bf == 0:
-            dwdr = -4*s*r*np.e**(-s*r**2)
-            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...])
-            return Dphi
-        if bf == 2:
-            Dphi = (x[...,np.newaxis,:] - C[np.newaxis,...]) / np.sqrt(s + r**2)[...,np.newaxis]
-            return Dphi
-        if bf == 31:
-            dwdr = (msk*(-4*(s - r)**3 * (1 + 4*r)    / 20 +\
-                          4*np.maximum(0, s -   r)**4 / 20) )
-            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
-            return Dphi
-        if bf == 32:
-            dwdr = (msk*(-6*(s-r)**5 * (1 + 18*r + 35*r**2)  /1680 +\
-                                       (    18   + 70*r   )  /1680) )
-            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
-            return Dphi
-        if bf == 51:
-            dwdr = msk*(-5*(s-r)**4 * (1+5*r)     / 30 +\
-                         4*np.maximum(0, s-r)**5 / 30) 
-            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
-            return Dphi
-    return Dphi
-
-
-def get_Dphi_curr(a):
-    bf = a.bf
-    s  = a.s
-    C  = a.centers[-1]
-    thscl = a.theta_scale
-    def Dphi(x): # is a row vector 
-        if thscl is not None:
-            r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], phi_eval=True)
-        else:
-            r   = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
-        msk = np.sign(np.maximum(0, s - r))
-        if bf == 0:
-            dwdr = -4*s*r*np.e**(-s*r**2)
-            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...])
-            return Dphi
-        if bf == 2:
-            Dphi = (x[...,np.newaxis,:] - C[np.newaxis,...]) / np.sqrt(s + r**2)[...,np.newaxis]
-            return Dphi
-        if bf == 31:
-            dwdr = (msk*(-4*(s - r)**3 * (1 + 4*r)    / 20 +\
-                          4*np.maximum(0, s -   r)**4 / 20) )
-            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
-            return Dphi
-        if bf == 32:
-            dwdr = (msk*(-6*(s-r)**5 * (1 + 18*r + 35*r**2)  /1680 + \
-                                       (    18   + 70*r   )  /1680) )
-            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
-            return Dphi
-        if bf == 51:
-            dwdr = msk*(-5*(s-r)**4 * (1+5*r)     / 30 +\
-                         4*np.maximum(0, s-r)**5 / 30)
-            Dphi = dwdr[...,np.newaxis] * (x[...,np.newaxis,:] - C[np.newaxis,...]) / (1e-5+r)[...,np.newaxis]
-            return Dphi
-    return Dphi
 
 
 def cas_train_cbf(a, x_safe  , 
@@ -320,26 +153,70 @@ def clarabel_fit_cbf(a, x_safe  , u_safe  ,
 
 
 # fit cbf or cbvf data by inverting system of equations
-def fit_cbf_w_inv(a, X, b):
+def fit_cbf_w_inv(a, X, rhs):
     phiT = get_phiT(a)
     A = phiT(X, X)
-    theta = np.linalg.inv(A) @ b
+    #print(A.shape)
+    theta = np.linalg.inv(A) @ (rhs - a.b)
     return theta
 
+
 # gradient descent to tune fitted weights
-def gradient_descent(a, theta, it, eps, tol, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe,\
-                     lam_safe, lam_dyn, lam_unsafe, lam_dh):
-    L = get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, lam_safe, lam_dyn, lam_unsafe, lam_dh, gamma_safe, gamma_dyn, gamma_unsafe) 
-    v, grad = L(theta)
+def gradient_descent(a, theta, it, eps, mu, tol, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe,\
+                     lam_safe, lam_dyn, lam_unsafe, lam_dh, lam_theta, hmax, centers=None, use_jax=False):
+    if use_jax:
+        theta = jnp.array(theta)
+        x_safe = jnp.array(x_safe); u_safe = jnp.array(u_safe)
+        x_buffer = jnp.array(x_buffer); u_buffer = jnp.array(u_buffer)
+        x_unsafe = jnp.array(x_unsafe)
+        L = jax.jit(jax_get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe,
+                    gamma_safe, gamma_dyn, gamma_unsafe , lam_safe, lam_dyn, lam_unsafe, lam_dh, lam_theta, hmax, centers=centers))
+    else:
+        L = get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, lam_safe, lam_dyn, lam_unsafe, lam_dh, gamma_safe, gamma_dyn, gamma_unsafe, centers=centers)
+    #print(L) 
+    loss = []
+    loss_Lsafe = []
+    loss_Ldyn = []
+    loss_Lunsafe = []
+    loss_Ldh = []
+    loss_Lhm = []
+    mom = 0
+    v, grad, _ = L(theta)
+    v_prev = v + 10
+    #print("initial loss", v)
     for i in range(it):
-        theta_ip1 = theta - eps * grad
-        v_ip1, grad_ip1 = L(theta_ip1)
-        print("it", i, "loss:", v_ip1)
-        #if v - v_ip1 <= tol:
-        #    break
-        v = v_ip1
-        grad = grad_ip1
-    return theta
+        #theta_ip1 = theta - eps * (1 + jnp.cos(i*jnp.pi/it)) * grad
+        #if v is not None:
+        v, grad, losses = L(theta)
+        L_safe_v, L_safe_dyn, L_buffer, L_unsafe, L_dh, L_hm = losses
+        loss_Lsafe.append(L_safe_v); loss_Ldyn.append(L_safe_dyn + L_buffer)
+        loss_Lunsafe.append(L_unsafe); loss_Ldh.append(L_dh); loss_Lhm.append(L_hm)
+        mom = mu * mom + grad
+        theta = theta - eps * mom
+        if i % 10 == 0:
+            print("it", i, "loss:", v)
+        if v == 0 or v == v_prev or abs(v_prev - v) <= tol:
+            print(v_prev - v)
+            print(v)
+            print(v_prev)
+            print("triggered")
+            break
+        loss.append(v)
+        v_prev = v
+
+    plt.figure(figsize=(14,12))
+    #plt.ylim((0, 200))
+    plt.plot(loss_Lsafe, label="safe")
+    plt.plot(loss_Ldyn, label="dyn")
+    plt.plot(loss_Lunsafe, label="unsafe")
+    plt.plot(loss_Ldh, label="grad norm")
+    plt.plot(loss_Lhm, label="hmax")
+    plt.figtext(.78, .75, "gamma_safe="+str(gamma_safe))
+    plt.figtext(.78, .73, "gamma_dyn="+str(gamma_dyn))
+    plt.figtext(.78, .71, "gamma_unsafe="+str(gamma_unsafe))
+    plt.legend()
+    plt.show()
+    return theta, loss, loss_Lsafe, loss_Ldyn, loss_Lunsafe
 
 
 def clarabel_solve_cbf(a, x_safe  , u_safe  ,
@@ -415,6 +292,7 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
     solution = solver.solve()
     return solution.x
 
+
 def get_learning_cbfs_lagrangian(a, x_safe  , u_safe  ,
                                     x_buffer, u_buffer,
                                     x_unsafe, lam_safe,
@@ -438,65 +316,62 @@ def get_learning_cbfs_lagrangian(a, x_safe  , u_safe  ,
     fv   = vmap(a.dynamics.open_loop_dynamics, in_axes=(0, None))
     gv   = vmap(a.dynamics.control_jacobian  , in_axes=(0, None))
 
+
     # preformat u shapes for vectorized matrix multiplication (ijk),(ikl)->(ijl)
     u_safe = u_safe.reshape(u_safe.shape[0], u_safe.shape[1], 1)
     if u_buffer.shape[0] != 0:
         u_safe = u_buffer.reshape(u_buffer.shape[0], u_buffer.shape[1], 1)
 
     # M = dim(theta), N = dim(x)
-    safe_L = gamma_safe - (phi(x_safe,C) @ theta[:,np.newaxis]).squeeze() - b # (M x 1)
-    print("safe L shape:", safe_L.shape)
-    safe_dyn_L = gamma_dyn  - (theta[np.newaxis,np.newaxis,:] @ Dphi(x_safe,C) @ (fv(x_safe,0)[...,np.newaxis] + gv(x_safe,0) @ u_safe)).squeeze() -\
-                      (phi(x_safe,C) @ theta[:,np.newaxis]).squeeze() - b
-    print("safe dynamics L shape:", safe_dyn_L.shape)
+    Dphi_xsafe = Dphi(x_safe,C) 
+    safe_f = phi(x_safe,C)
+    safe_dyn_f = Dphi_xsafe @ (fv(x_safe,C)[...,np.newaxis] + gv(x_safe,0) @ u_safe)
     if u_buffer.shape[0] != 0:
-        buffer_dyn_L = gamma_dyn  - (theta[np.newaxis,np.newaxis,:] @ Dphi(x_buffer,C) @ (fv(x_buffer,0)[...,np.newaxis] + gv(x_buffer, 0) @ u_buffer)).squeeze() -\
-                                    (phi(x_buffer,C) @ theta[:,np.newaxis]).squeeze() - b
-        print("buffer dynamics L shape:", buffer_dyn_L.shape) 
-        gnorm_buffer_L = np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi(x_buffer,C), ord=2, axis=2).squeeze()
-        print("buffer grad norm L shape:", gnorm_buffer_L.shape)
-        Dbuffer_dyn_L = -phi(x_buffer,C) - (Dphi(x_buffer,C) @ (fv(x_buffer,0)[...,np.newaxis] + gv(x_buffer,0) @ u_buffer)).squeeze()
-        print("D_buffer_dyn_L shape:", Dbuffer_dyn_L.shape)
-        Dgnorm_buffer_L = (Dphi(x_buffer,C) @ (np.einsum("ijk->ikj", Dphi(x_buffer,C)) @ theta)[...,np.newaxis] /\
-                            np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi(x_buffer,C), ord=2, axis=2, keepdims=True)).squeeze()
-        print("Dgnorm_buffer_L shape", Dgnorm_buffer_L.shape)
-    else:
-        buffer_dyn_L = np.array([0])
-        gnorm_buffer_L = np.array([0])
-        Dbuffer_dyn_L = np.array([0])
-        Dgnorm_buffer_L = np.array([0])
-
-    unsafe_L = (phi(x_unsafe,C) @ theta[:,np.newaxis]).squeeze() + b + gamma_unsafe
-    print("unsafe L shape:", unsafe_L.shape)
-    # norm of gradient
-    gnorm_safe_L = np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi(x_safe,C), ord=2, axis=2).squeeze()
-    print("safe grad norm L shape:", gnorm_safe_L.shape)
-    Dsafe_L = -phi(x_safe,C)
-    print("D_safe_L shape:", Dsafe_L.shape)
-    Dsafe_dyn_L = -phi(x_safe,C) - (Dphi(x_safe,C) @ (fv(x_safe,0)[...,np.newaxis] + gv(x_safe,0) @ u_safe)).squeeze()
-    print("D_safe_dyn_L shape:", Dsafe_dyn_L.shape)
-    Dunsafe_L = phi(x_unsafe,C)
-    print("D_unsafe_L shape:", Dunsafe_L.shape)
-    Dgnorm_safe_L = (Dphi(x_safe,C) @ (np.einsum("ijk->ikj", Dphi(x_safe,C)) @ theta)[...,np.newaxis] /\
-                     np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi(x_safe,C), ord=2, axis=2, keepdims=True)).squeeze()
-    print("Dgnorm_safe_L shape", Dgnorm_safe_L.shape)
+        Dphi_xbuffer = Dphi(x_buffer,C)
+        buffer_f = phi(x_buffer,C)
+        buffer_dyn_f = Dphi_xbuffer @ (f(x_buffer,C)[...,np.newaxis] + gv(x_buffer,0) @ u_buffer)
+    unsafe_f = phi(x_unsafe,C)
 
 
     def L(theta): 
-        return ((theta**2).sum() +
+        safe_L = gamma_safe - (safe_f @ theta[:,np.newaxis]).squeeze() - b # (M x 1)
+        safe_dyn_L = gamma_dyn  - (theta[np.newaxis,np.newaxis,:] @ safe_dyn_f).squeeze() -\
+                         (safe_f @ theta[:,np.newaxis]).squeeze() - b
+        unsafe_L = (unsafe_f @ theta[:,np.newaxis]).squeeze() + b + gamma_unsafe
+        # norm of gradient
+        #gnorm_safe_L = np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi_xsafe, ord=2, axis=2).squeeze()
+        Dsafe_L = -safe_f
+        Dsafe_dyn_L = -safe_f - (safe_dyn_f).squeeze()
+        Dunsafe_L = unsafe_f
+        #Dgnorm_safe_L = (Dphi_xsafe @ (np.einsum("ijk->ikj", Dphi_xsafe) @ theta)[...,np.newaxis] /\
+        #                 np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi_xsafe, ord=2, axis=2, keepdims=True)).squeeze()
+        if u_buffer.shape[0] != 0:
+            buffer_dyn_L = gamma_dyn - (theta[np.newaxis,np.newaxis,:] @ buffer_dyn_f).squeeze() -\
+                            (buffer_f @ theta[:,np.newaxis]).squeeze() - b
+            #gnorm_buffer_L = np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi_xbuffer, ord=2, axis=2).squeeze()
+            Dbuffer_dyn_L = -buffer_f - (buffer_dyn_f).squeeze()
+            #Dgnorm_buffer_L = (Dphi_xbuffer @ (np.einsum("ijk->ikj", Dphi_xbuffer) @ theta)[...,np.newaxis] /\
+            #np.linalg.norm(theta[np.newaxis,np.newaxis,:] @ Dphi_xbuffer, ord=2, axis=2, keepdims=True)).squeeze()
+        else:
+            buffer_dyn_L = np.array([0])
+            #gnorm_buffer_L = np.array([0])
+            Dbuffer_dyn_L = np.array([0])
+            #Dgnorm_buffer_L = np.array([0])
+
+        return ((#theta**2).sum() +
                  lam_safe  * np.maximum(0, safe_L).sum() +\
                  lam_dyn   * np.maximum(0, safe_dyn_L).sum() +\
                  lam_dyn   * np.maximum(0, buffer_dyn_L).sum() +\
-                 lam_unsafe* np.maximum(0, unsafe_L).sum() +\
-                 lam_dh    * gnorm_safe_L.sum() +\
-                 lam_dh    * gnorm_buffer_L.sum()
+                 lam_unsafe* np.maximum(0, unsafe_L).sum())# +\
+                 #lam_dh    * gnorm_safe_L.sum() +\
+                 #lam_dh    * gnorm_buffer_L.sum()
                , 2*theta +\
                     lam_safe * (np.sign(np.maximum(0, safe_L))[:,np.newaxis] * Dsafe_L).sum(axis=0) +\
                  lam_dyn  * (np.sign(np.maximum(0, safe_dyn_L))[:,np.newaxis] * Dsafe_dyn_L).sum(axis=0) +\
                  lam_dyn  * (np.sign(np.maximum(0, buffer_dyn_L))[:,np.newaxis] * Dbuffer_dyn_L).sum(axis=0) +\
-                 lam_unsafe* (np.sign(np.maximum(0, unsafe_L))[:,np.newaxis] * Dunsafe_L ).sum(axis=0) +\
-                 lam_dh    * (Dgnorm_safe_L).sum(axis=0) + \
-                 lam_dh    * (Dgnorm_buffer_L).sum(axis=0))
+                 lam_unsafe* (np.sign(np.maximum(0, unsafe_L))[:,np.newaxis] * Dunsafe_L ).sum(axis=0))# +\
+                 #lam_dh    * (Dgnorm_safe_L).sum(axis=0) + \
+                 #lam_dh    * (Dgnorm_buffer_L).sum(axis=0))
 
 
     return L

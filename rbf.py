@@ -40,6 +40,10 @@ def get_h_curr(a, jax_f=False):
     theta = np.array(a.thetas)
     if jax_f or a.jax_f:
         def h(x):
+            #print("x shape", x.shape)
+            #print("c.shape", C.shape)
+            #print("theta shape", theta.shape)
+            #print("phi shape", phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True).shape)
             h_vec = jnp.einsum('ijk,jk->j', phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True), theta)
             i = jnp.argmax(h_vec)
             return h_vec[i] + b, i

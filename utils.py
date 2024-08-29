@@ -337,7 +337,7 @@ def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, obst
 
     if d == 3:
         for x in curr_data:
-            hx, _ = h(x, centers, thetas)
+            hx, _ = h(x[np.newaxis,...], centers, thetas)
             if hx <= 0:
                 B = pat.Wedge(x[:2], s/2, 360/(2*np.pi)*x[2] - 0.1, 360/(2*np.pi)*x[2] + 0.1, width=s/2, color='r')
                 ax.add_patch(B)

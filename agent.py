@@ -269,6 +269,7 @@ class Agent:
         boundary.terminal  = True
         boundary.direction = 0 #-1
 
+        stop=False
         if manual:
             y = self.pos
             traj = []; traj.append(y)
@@ -286,14 +287,18 @@ class Agent:
 
                 # appropriate value function to decide early stopping
                 if cbvf:
-                    if grid.interpolate(V, y) - tol <= 0:
-                        print("state:", y)
-                        print("h value:", grid.interpolate(V,y))
+                    if grid.interpolate(V, w) - tol <= 0:
+                        stop=True
+                        #print("state:", y)
+                        #print("h value:", grid.interpolate(V,y))
                         #break
                 else:
-                    pass
-                    #if  h(y[np.newaxis,...])[0] - tol <= 0:
-                    #    break
+                    if tol is not None:
+                        if  h(w[np.newaxis,...])[0] - tol <= 0:
+                            stop=True
+                if stop:
+                    break
+
                 ### h info for debug ###
                 '''
                 print("hmax", h(y)[0])
@@ -324,11 +329,18 @@ class Agent:
                     w = dynamics_RK4(w, u_slack, ODE_RHS, DT)
                     #break
                 #z = dynamics_RK4(z, u_nom, ODE_RHS, DT)
+                #print("y", y[:2])
+                #print("target", target[:2])
+                #print("prv", traj[-1][:2])
+                #if np.linalg.norm(w[:2]-target[:2]) >= np.linalg.norm(slack[-1][:2]-target[:2]):
+                #    break
+
                 traj.append(y)
                 unf.append(z)
                 slack.append(w)
                 if u_slack is not None:
                     usig.append(u_slack)
+
             traj = np.array(traj)
             unf  = np.array(unf)
             usig = np.array(usig)
@@ -354,17 +366,23 @@ class Agent:
             plt.show()
 
         if cbvf:
-            plt.figure(figsize=(14,12))
-            plt.contourf(grid.coordinate_vectors[0], grid.coordinate_vectors[1], np.max(V, axis=-1).T, levels=30)
-            plt.colorbar()
+            plt.figure(figsize=(12,12))
+            plt.rc('xtick', labelsize=14)
+            plt.rc('ytick', labelsize=14)
+            plt.rc('xtick', labelsize=14)
+            plt.rc('ytick', labelsize=14)
+            contour_plot = plt.contour(grid.coordinate_vectors[0], grid.coordinate_vectors[1], np.max(V, axis=-1).T)#, levels=30)
+            plt.clabel(contour_plot, inline=1, fontsize=10)
+            plt.title("SDF")
+            #plt.colorbar()
             plt.contour(grid.coordinate_vectors[0],
                         grid.coordinate_vectors[1],
                         np.max(V, axis=-1).T,
                         levels=0,
                         colors="black",
-                        linewidths=3)
+                        linewidths=2)
             plt.plot(slack[:,0], slack[:,1], "co")
-            plt.plot(self.obstacles[:,0], self.obstacles[:,1], "ro", linestyle="none")
+            plt.plot(self.obstacles[:,0], self.obstacles[:,1], "r.", linestyle="none")
             plt.show()
         elif angle is not None:
             plot_cbf(self, np.array(self.centers), np.array(self.thetas), traj=traj, target=target, angle=angle, obstacles=self.obstacles,
@@ -372,12 +390,12 @@ class Agent:
         else:
             plot_cbf(self, np.array(self.centers), np.array(self.thetas), traj=traj, target=target, obstacles=self.obstacles)
 
-        self.pos = traj[-1, :]
+        self.pos = slack[-1, :]
         self.t  += tend
 
         print("percent violation:", num_violation/N)
         print("new position is" , self.pos)
         print("new time is", self.t)
         #print("h is now", h(self.pos)[0])
-        return traj, usig, total_slack
+        return slack, usig, total_slack
 

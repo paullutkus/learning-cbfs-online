@@ -162,17 +162,23 @@ def fit_cbf_w_inv(a, X, rhs):
 
 
 # gradient descent to tune fitted weights
-def gradient_descent(a, theta, it, eps, mu, tol, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe,\
-                     lam_safe, lam_dyn, lam_unsafe, lam_dh, lam_theta, hmax, centers=None, use_jax=False):
+def gradient_descent(a, theta, it, eps, mu, tol, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, u_unsafe, x_0, x_2pi,\
+                     gamma_safe, gamma_dyn, gamma_unsafe, lam_safe, lam_dyn, lam_unsafe, lam_dh, lam_theta, lam_bd, hmax,\
+                     centers=None, use_jax=False, ckpt=None):
+    if ckpt is not None:
+        ckpt.reverse()
     if use_jax:
         theta = jnp.array(theta)
         x_safe = jnp.array(x_safe); u_safe = jnp.array(u_safe)
         x_buffer = jnp.array(x_buffer); u_buffer = jnp.array(u_buffer)
         x_unsafe = jnp.array(x_unsafe)
-        L = jax.jit(jax_get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe,
-                    gamma_safe, gamma_dyn, gamma_unsafe , lam_safe, lam_dyn, lam_unsafe, lam_dh, lam_theta, hmax, centers=centers))
+        L = jax.jit(jax_get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, u_unsafe, x_0, x_2pi,\
+                    gamma_safe, gamma_dyn, gamma_unsafe, lam_safe, lam_dyn, lam_unsafe, lam_dh, lam_theta, lam_bd, hmax,\
+                    centers=centers))
     else:
-        L = get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, lam_safe, lam_dyn, lam_unsafe, lam_dh, gamma_safe, gamma_dyn, gamma_unsafe, centers=centers)
+        L = get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, u_unsafe,
+                                         lam_safe, lam_dyn, lam_unsafe, lam_dh,
+                                         gamma_safe, gamma_dyn, gamma_unsafe, centers=centers)
     #print(L) 
     loss = []
     loss_Lsafe = []
@@ -180,17 +186,23 @@ def gradient_descent(a, theta, it, eps, mu, tol, x_safe, u_safe, x_buffer, u_buf
     loss_Lunsafe = []
     loss_Ldh = []
     loss_Lhm = []
+    loss_Lbd = []
+    weights = []
     mom = 0
     v, grad, _ = L(theta)
     v_prev = v + 10
     #print("initial loss", v)
-    for i in range(it):
+    for i in range(it+1):
         #theta_ip1 = theta - eps * (1 + jnp.cos(i*jnp.pi/it)) * grad
         #if v is not None:
         v, grad, losses = L(theta)
-        L_safe_v, L_safe_dyn, L_buffer, L_unsafe, L_dh, L_hm = losses
-        loss_Lsafe.append(L_safe_v); loss_Ldyn.append(L_safe_dyn + L_buffer)
-        loss_Lunsafe.append(L_unsafe); loss_Ldh.append(L_dh); loss_Lhm.append(L_hm)
+        L_safe_v, L_safe_dyn, L_buffer, L_unsafe_v, L_unsafe_dyn, L_dh, L_hm, L_bd = losses
+        loss_Lsafe.append(L_safe_v)
+        loss_Ldyn.append(L_safe_dyn + L_buffer + L_unsafe_dyn)
+        loss_Lunsafe.append(L_unsafe_v)
+        loss_Ldh.append(L_dh)
+        loss_Lhm.append(L_hm)
+        loss_Lbd.append(L_bd)
         mom = mu * mom + grad
         theta = theta - eps * mom
         if i % 10 == 0:
@@ -201,6 +213,10 @@ def gradient_descent(a, theta, it, eps, mu, tol, x_safe, u_safe, x_buffer, u_buf
             print(v_prev)
             print("triggered")
             break
+        if ckpt is not None:
+            if i == ckpt[-1]:
+                weights.append(theta)
+                ckpt.pop()
         loss.append(v)
         v_prev = v
 
@@ -211,12 +227,13 @@ def gradient_descent(a, theta, it, eps, mu, tol, x_safe, u_safe, x_buffer, u_buf
     plt.plot(loss_Lunsafe, label="unsafe")
     plt.plot(loss_Ldh, label="grad norm")
     plt.plot(loss_Lhm, label="hmax")
+    plt.plot(loss_Lbd, label="boundary")
     plt.figtext(.78, .75, "gamma_safe="+str(gamma_safe))
     plt.figtext(.78, .73, "gamma_dyn="+str(gamma_dyn))
     plt.figtext(.78, .71, "gamma_unsafe="+str(gamma_unsafe))
     plt.legend()
     plt.show()
-    return theta, loss, loss_Lsafe, loss_Ldyn, loss_Lunsafe
+    return theta, loss, loss_Lsafe, loss_Ldyn, loss_Lunsafe, weights
 
 
 def clarabel_solve_cbf(a, x_safe  , u_safe  ,

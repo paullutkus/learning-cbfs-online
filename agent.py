@@ -1,6 +1,7 @@
-import matplotlib.pyplot   as plt
-import hj_reachability     as hj
-import numpy               as np
+import matplotlib.pyplot as plt
+import hj_reachability   as hj
+import numpy             as  np
+import jax.numpy         as jnp
 from   utils           import kd_tree_detection, cylindrical_kd_tree_detection
 from   rbf             import get_h_curr, get_Dphi
 from   controls        import get_xd_mpc, get_safety_filter, get_cbvf_safety_filter, get_slack_safety_filter
@@ -159,10 +160,12 @@ class Agent:
         return (x_buffer, x_safe)
 
 
-    def get_local_V(self, gparams, obs_funcs, thn=None, rx=None, out_func=None, T=500, mult=1):
+    def get_local_V(self, gparams, obs_funcs, thn=None, rx=None, out_func=None, T=500, mult=1,
+                    extension=0):
 
-        local_hjb_grid, sdf, grid = local_grid(self.pos, gparams, obs_funcs,
-                                               thn=thn , rx=rx,   out_func=out_func, mult=mult)
+        local_hjb_grid, sdf, grid = local_grid(self.pos , gparams, obs_funcs,
+                                               thn=thn  , rx=rx  , out_func=out_func,
+                                               mult=mult, extension=extension)
         solver_settings = hj.SolverSettings.with_accuracy("very_high",
                                                           hamiltonian_postprocessor=hj.solver.backwards_reachable_tube,
                                                           value_postprocessor      =hj.solver.static_obstacle(sdf))
@@ -241,111 +244,54 @@ class Agent:
         return
 
 
-    def goto(self, target, T=0.5, tend=100, tol=0.05, use_cbf_mpc=False, angle=None, manual=True, DT=0.05, mpc_DT=0.01, eps=0,
-             cbvf=False, grid=None, V=None, bicycle=False, N_part=10, plot_max_cbf=False, plot_usig=False, plot_dhdt=False,
-             plot_hxt=False):
+    #### ARGUMENTS ###
+    # target : state to approach for MPC     || tend : time to integrate for                  || sim_DT: integration timestep || use_scipy: whether to use for integration
+    # bicycle: system-type (planar if False) || angle: if bicycle, which angle to plot CBF at ||
+    # mpc_DT : MPC dynamics timestep         || T    : MPC horizon || eps: CBF inequality rhs || htol  : h-value at which to halt integration
+    # cbvf   : use cbvf safety filter        || grid : value function grid for calling utils  || V     : value function
+    ### PLOTTING ARGUMENTS ###
+    # plot_max_cbf: max h over theta at x,y  || plot_usig: safety filter control signal       || plot_hxt: h value over time  || plot_unf: plot unfiltered trajectory
+    # plot_slack  : slack variable over traj || N_part: number of partitions to split points into when vectorizing computation of h on grid
+
+    def goto(self, target, tend=100, sim_DT=0.05, use_scipy=False,
+             bicycle     =False, angle    =None ,
+             mpc_DT      =0.01 , T        =0.5  , eps      =0    , htol    = 0.05,
+             cbvf        =False, grid     =None , V        =None ,
+             plot_max_cbf=False, plot_usig=False, plot_hxt =False, plot_unf=False,
+             plot_slack  =False, N_part   =10   , last_cbf =False, zoh=3):
+
+        # INIT DYNAMICS, CBF, MPC #
         f = self.dynamics.open_loop_dynamics
         g = self.dynamics.control_jacobian
-
         h      = get_h_curr(self)
         xd_mpc = get_xd_mpc(self, dt=mpc_DT, bicycle=bicycle)
 
-        # if true, dont use CBF, just CBVF obtained by solving PDE
+        # INIT SAFETY FILTER #
         if cbvf:
-            slack_filter = get_cbvf_safety_filter(self, grid, V)
+            safety_filter = get_cbvf_safety_filter(self, grid, V)
         else:
-            safety_filter = get_safety_filter(self, eps=eps)
-            slack_filter  = get_slack_safety_filter(self, eps=eps)
+            safety_filter = get_slack_safety_filter(self, eps=eps, last_cbf=last_cbf)
 
+        # DISPLAY INITIAL AGENT STATE #
         print("position is", self.pos)
-        #print("h is", h(self.pos)[0])
+        if cbvf: 
+            print("V is", grid.interpolate(V,self.pos))
+        else:
+            print("h is", h(self.pos[np.newaxis,...])[0])
         print("start time is", self.t)
 
+        # NUM INTEGRATION #
         safe_controller = lambda y: safety_filter(y, xd_mpc(y, target, T=T))
         closed_loop     = lambda y, t: f(y,0) + g(y,0) @ safe_controller(y) # switch order if using odeint
         ODE_RHS         = lambda y, u: f(y,0) + g(y,0) @ u
 
-        boundary           = lambda t, y: h(y)[0] - tol
+        # FOR HALTING INTEGRATION WHEN USING SCIPY #
+        boundary           = lambda t, y: h(y)[0] - htol
         boundary.terminal  = True
         boundary.direction = 0 #-1
 
-        stop=False
-        if manual:
-            y = self.pos
-            traj = []; traj.append(y)
-            unf  = []; unf.append(y); z = y
-            slack= []; slack.append(y); w = y
-            usig = []
-            hxt  = []
-            Dphi = get_Dphi(self)
-            N = int(tend / DT)
-            num_violation = 0
-            total_slack = 0
-            for  i in tqdm(range(N)):
-                if np.linalg.norm(y - target) <= 1e-2:
-                    break
-
-                # appropriate value function to decide early stopping
-                if cbvf:
-                    if grid.interpolate(V, w) - tol <= 0:
-                        stop=True
-                        #print("state:", y)
-                        #print("h value:", grid.interpolate(V,y))
-                        #break
-                else:
-                    if tol is not None:
-                        if  h(w[np.newaxis,...])[0] - tol <= 0:
-                            stop=True
-                if stop:
-                    break
-
-                ### h info for debug ###
-                '''
-                print("hmax", h(y)[0])
-                hy, i = h(y)
-                print("norm grad", np.linalg.norm(self.thetas[i].T @ Dphi(y, self.centers[i])))
-                '''
-                ########################
-                if not cbvf:
-                    hxt.append(h(w[np.newaxis,...])[0].item())
-                #u_nom = xd_mpc(y, target, T=T)
-                u_slack_nom = xd_mpc(w, target, T=T)
-                #u = safety_filter(y, u_nom)
-                u_slack, slackvar = slack_filter(w, u_slack_nom)
-                total_slack += slackvar
-                if slackvar >= 1e-3:
-                    num_violation += 1
-                u = None
-                if u is not None:
-                    #y = dynamics_RK4(y, u, ODE_RHS, DT)
-                    w = dynamics_RK4(w, u_slack, ODE_RHS, DT)
-                    if np.linalg.norm(u_slack - u) >= 1e-1:
-                        pass
-                        #print("u\n", u)
-                        #print("u slack\n", u_slack)
-                        #print("slackvar\n", slackvar)
-                else:
-                    #print("safe control not found")
-                    w = dynamics_RK4(w, u_slack, ODE_RHS, DT)
-                    #break
-                #z = dynamics_RK4(z, u_nom, ODE_RHS, DT)
-                #print("y", y[:2])
-                #print("target", target[:2])
-                #print("prv", traj[-1][:2])
-                #if np.linalg.norm(w[:2]-target[:2]) >= np.linalg.norm(slack[-1][:2]-target[:2]):
-                #    break
-
-                traj.append(y)
-                unf.append(z)
-                slack.append(w)
-                if u_slack is not None:
-                    usig.append(u_slack)
-
-            traj = np.array(traj)
-            unf  = np.array(unf)
-            usig = np.array(usig)
-            slack = np.array(slack)
-        else: 
+        # SCIPY ADAPTIVE TIMESTEP INTEGRATION #
+        if use_scipy:
             x0 = self.pos
             tend=tend
             teval = np.linspace(0, tend, num=100000)
@@ -353,19 +299,103 @@ class Agent:
             #sol = odeint(closed_loop, x0, teval)
             traj = sol.y.T
 
+        # CONSTANT-TIMESTEP INTEGRATION USING RK4 #
+        else:
+            stop=False
+
+            # INIT UNFILTERED AND FILTERED TRAJECTORY #
+            y = self.pos
+            z = y
+            traj = []; traj.append(y)
+            unf  = []; unf.append(z)
+
+            # FOR OPTIONAL PLOTTING #
+            usig = []
+            hxt  = []
+            slack= []
+
+            Dphi = get_Dphi(self)
+            num_violation = 0
+            total_slack = 0
+            N = int(tend / sim_DT) # NUM ITERATIONS
+
+            for i in tqdm(range(N)):
+                if i % 100 == 0:
+                    print("state:", y)
+                if np.linalg.norm(y - target) <= 1e-2:
+                    print("breaking, approached target")
+                    break
+
+                # EARLY STOPPING IF `h <= htol` #
+                if htol is not None:
+                    if cbvf:
+                        if grid.interpolate(V,y) - htol <= 0:
+                            stop=True
+                    else:
+                        if h(y[np.newaxis,...])[0] - htol <= 0:
+                            stop=True
+                if stop:
+                    print("breaking, hit htol")
+                    break
+
+                # STORE CURRENT `h` FOR PLOTTING #
+                if cbvf:
+                    hxt.append(grid.interpolate(V,y))
+                else:
+                    hxt.append(h(y[np.newaxis,...])[0].item())
+                
+                # GET SAFE CONTROL #
+                if i % zoh == 0:
+                    u_nom = xd_mpc(y, target, T=T)
+                    u, slackt = safety_filter(y, u_nom)
+                    total_slack += slackt
+                    if slackt >= 1e-2:
+                        num_violation += 1
+
+                # COMPUTE NEXT STATE #
+                y = dynamics_RK4(y, u, ODE_RHS, sim_DT)
+                if bicycle:
+                    y = y.at[-1].set(y[-1] % (2*jnp.pi))
+                if plot_unf:
+                    z = dynamics_RK4(z, u_nom, ODE_RHS, DT)
+
+                # STORE COMPUTED STATES FOR PLOTTING #
+                traj.append(y)
+                usig.append(u)
+                slack.append(slackt)
+                if plot_unf:
+                    unf.append(z)
+
+
+        traj = np.array(traj)
+        unf  = np.array(unf)
+        usig = np.array(usig)
+        slack = np.array(slack)
+
+        # OPTIONAL PLOTTING #
         if plot_hxt:
             print("### PLOTTING h(x(t)) ###")
             plt.figure(figsize=(14,12))
+            plt.title("h(t)")
             plt.plot(hxt)
             plt.show()
 
         if plot_usig:
             print("### PLOTTING CONTROL SIGNAL ###")
             plt.figure(figsize=(14,12))
+            plt.title("u(t)")
             plt.plot(usig)
             plt.show()
 
+        if plot_slack:
+            print("### PLOTTING SLACK ###")
+            plt.figure(figsize=(14,12))
+            plt.title("slack(t)")
+            plt.plot(slack)
+            plt.show()
+
         if cbvf:
+            print("### PLOTTING CBVF TRAJECTORY ###")
             plt.figure(figsize=(12,12))
             plt.rc('xtick', labelsize=14)
             plt.rc('ytick', labelsize=14)
@@ -381,21 +411,29 @@ class Agent:
                         levels=0,
                         colors="black",
                         linewidths=2)
-            plt.plot(slack[:,0], slack[:,1], "co")
+            plt.plot(traj[:,0], traj[:,1], "co")
             plt.plot(self.obstacles[:,0], self.obstacles[:,1], "r.", linestyle="none")
             plt.show()
+
+        # PLOT CBF AND TRAJECTORY #
         elif angle is not None:
-            plot_cbf(self, np.array(self.centers), np.array(self.thetas), traj=traj, target=target, angle=angle, obstacles=self.obstacles,
-                     nom_traj=unf, slack_traj=slack, N_part=N_part, plot_max_cbf=plot_max_cbf)
+            plot_cbf(self, np.array(self.centers), np.array(self.thetas), angle=angle, obstacles=self.obstacles,
+                     nom_traj=unf, traj=traj, N_part=N_part, plot_max_cbf=plot_max_cbf)
         else:
             plot_cbf(self, np.array(self.centers), np.array(self.thetas), traj=traj, target=target, obstacles=self.obstacles)
 
-        self.pos = slack[-1, :]
+        # UPDATE AGENT STATE #
+        self.pos = y
         self.t  += tend
 
+        # DISPLAY FINAL AGENT STATE #
         print("percent violation:", num_violation/N)
         print("new position is" , self.pos)
         print("new time is", self.t)
-        #print("h is now", h(self.pos)[0])
-        return slack, usig, total_slack
+        if cbvf: 
+            print("V is now", grid.interpolate(V,self.pos))
+        else:
+            print("h is now", h(self.pos[np.newaxis,...])[0])
+
+        return traj, usig, total_slack
 

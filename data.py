@@ -112,8 +112,13 @@ def get_gparams(data, hjb_grid):
     return params
 
 
-def local_grid(pos, gparams, obs_funcs, thn=None, out_func=None, rx=None, mult=1):
+def local_grid(pos, gparams, obs_funcs, thn=None, out_func=None, rx=None, mult=1,
+               extension=0):
     xmax, xmin, ymax, ymin, dx = gparams
+    ymax += extension
+    ymin -= extension
+    xmax += extension
+    xmin -= extension
     xn  = int(np.round((xmax - xmin) / dx)) + 1
     yn  = int(np.round((ymax - ymin) / dx)) + 1
     if thn is not None:

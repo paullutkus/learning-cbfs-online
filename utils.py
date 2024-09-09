@@ -1,5 +1,11 @@
-import matplotlib.patches as pat
-import matplotlib.pyplot  as plt
+import matplotlib
+import matplotlib.pyplot      as plt
+import matplotlib.patches     as pat
+import matplotlib.patheffects as pe
+plt.rcParams.update({
+    'text.usetex': True,
+    'font.family': 'serif',
+})
 import numpy as np
 from scipy.stats       import rankdata
 from sklearn.neighbors import KDTree, BallTree
@@ -68,7 +74,8 @@ def cylindrical_kd_tree_detection(data, k, pct):
 ################
 
 
-def plot_cbf(a, centers, thetas, traj=None, nom_traj=None, slack_traj=None, target=None, obstacles=None, angle=None, line=None, N_part=25, plot_max_cbf=False):
+def plot_cbf(a, centers, thetas, traj=None, nom_traj=None, slack_traj=None, target=None, obstacles=None, angle=None, line=None,
+             N_part=25, plot_max_cbf=False, show_plots=True):
     print("### PLOTTING CBF AND TRAJECTORY ###")
     # GET AGENT-SPECIFIC INFO #
     width = a.width
@@ -91,7 +98,10 @@ def plot_cbf(a, centers, thetas, traj=None, nom_traj=None, slack_traj=None, targ
                     #p = np.array([x, y, angle])
                     pts.append(p)
             else:
-                p = np.array([x, y, angle])
+                if angle is not None:
+                    p = np.array([x, y, angle])
+                else:
+                    p = np.array([x, y])
                 pts.append(p)
             # manually insert h at gridpoints:
             '''
@@ -132,60 +142,63 @@ def plot_cbf(a, centers, thetas, traj=None, nom_traj=None, slack_traj=None, targ
     else:
         hvals = hvals.reshape(n, n)
 
-    # MAKE CONTOUR PLOT FROM GRID #
-    # OLD: hvals = vmap(lambda s1: vmap(lambda s2: h_joint(jnp.array([s1, s2]), thetas, centers))(x2))(x1)
-    plt.figure(figsize=(12, 12))
-    plt.rc('xtick', labelsize=14)
-    plt.rc('ytick', labelsize=14)
-    contour_plot = plt.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T)
-    plt.clabel(contour_plot, inline=1, fontsize=10)
+    if show_plots:
+        # MAKE CONTOUR PLOT FROM GRID #
+        # OLD: hvals = vmap(lambda s1: vmap(lambda s2: h_joint(jnp.array([s1, s2]), thetas, centers))(x2))(x1)
+        plt.figure(figsize=(12, 12))
+        plt.rc('xtick', labelsize=14)
+        plt.rc('ytick', labelsize=14)
+        contour_plot = plt.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T)
+        plt.clabel(contour_plot, inline=1, fontsize=10)
 
-    # PLOT OPTIONAL QUANTITIES #
-    if line is not None:
-        plt.plot(np.linspace(-r, r, num=50), line*np.ones((50,)), 'k:', linewidth=2)
-        #plt.plot(np.array([1, 1]), np.array([-2, 1]), 'k:', linewidth=1.5)
-    if traj is not None:
-        plt.plot(traj[:,0], traj[:,1], 'ro')
-    if nom_traj is not None:
-        plt.plot(nom_traj[:,0], nom_traj[:,1], 'go')
-    if slack_traj is not None:
-        plt.plot(slack_traj[:,0], slack_traj[:,1], 'bo')
-    if target is not None:
-        plt.plot(target[0], target[1], "m*")
-    if obstacles is not None:
-        plt.plot(obstacles[:,0], obstacles[:,1], "r.")
-    if angle is not None:
-        plt.title("theta="+str(angle))
+        # PLOT OPTIONAL QUANTITIES #
+        if line is not None:
+            plt.plot(np.linspace(-r, r, num=50), line*np.ones((50,)), 'k:', linewidth=2)
+            #plt.plot(np.array([1, 1]), np.array([-2, 1]), 'k:', linewidth=1.5)
+        if traj is not None:
+            plt.plot(traj[:,0], traj[:,1], 'ro')
+        if nom_traj is not None:
+            plt.plot(nom_traj[:,0], nom_traj[:,1], 'go')
+        if slack_traj is not None:
+            plt.plot(slack_traj[:,0], slack_traj[:,1], 'bo')
+        if target is not None:
+            plt.plot(target[0], target[1], "m*")
+        if obstacles is not None:
+            plt.plot(obstacles[:,0], obstacles[:,1], "r.")
+        if angle is not None:
+            plt.title("theta="+str(angle))
 
-    # MAKE GRID FOR SURFACE PLOT #
-    plt.xlabel('$x_1$', fontsize=18)
-    plt.ylabel('$x_2$', fontsize=18)
-    x1 = np.linspace(-r, r, num=n)
-    x2 = np.linspace(-r, r, num=n)
-    xx, yy = np.meshgrid(x1, x2)
-    zz = np.empty((n, n))
+        # MAKE GRID FOR SURFACE PLOT #
+        plt.xlabel('$x_1$', fontsize=18)
+        plt.ylabel('$x_2$', fontsize=18)
+        x1 = np.linspace(-r, r, num=n)
+        x2 = np.linspace(-r, r, num=n)
+        xx, yy = np.meshgrid(x1, x2)
+        zz = np.empty((n, n))
 
-    # UNUSED -- WE RE-USE `hvals` FROM CONTOUR PLOT # 
-    '''
-    for i, x in enumerate(x1):
-        for j, y in enumerate(x2):
-            if angle is not None:
-                zz[i,j], _ = h(np.array([x, y, angle]), centers, thetas)
-            else:
-                zz[i,j], _ = h(np.array([x, y]), centers, thetas)
-    #zz = vmap(lambda arg1, arg2: vmap(lambda s1, s2: h_joint(jnp.array([s1, s2]), thetas, centers), in_axes=(0, 0))(arg1, arg2), in_axes=(0,0))(xx, yy)
-    '''
-    # SURFACE PLOT #
-    fig = plt.figure(figsize=(12, 12))
-    from mpl_toolkits.mplot3d import Axes3D
-    ax = fig.add_subplot(111, projection='3d')
-    ax.view_init(elev=60, azim=-30) # prev (35, -30)
-    ax.plot_surface(xx, yy, hvals)
-    plt.show()
+        # UNUSED -- WE RE-USE `hvals` FROM CONTOUR PLOT # 
+        '''
+        for i, x in enumerate(x1):
+            for j, y in enumerate(x2):
+                if angle is not None:
+                    zz[i,j], _ = h(np.array([x, y, angle]), centers, thetas)
+                else:
+                    zz[i,j], _ = h(np.array([x, y]), centers, thetas)
+        #zz = vmap(lambda arg1, arg2: vmap(lambda s1, s2: h_joint(jnp.array([s1, s2]), thetas, centers), in_axes=(0, 0))(arg1, arg2), in_axes=(0,0))(xx, yy)
+        '''
+        # SURFACE PLOT #
+        fig = plt.figure(figsize=(12, 12))
+        from mpl_toolkits.mplot3d import Axes3D
+        ax = fig.add_subplot(111, projection='3d')
+        ax.view_init(elev=60, azim=-30) # prev (35, -30)
+        ax.plot_surface(xx, yy, hvals)
+        plt.show()
 
-    # RETURN MAXIMUM `h` IN CASE NORMALIZATION IS PREFERRED #
-    print("max h", np.max(hvals))
-    return np.max(hvals)
+        # RETURN MAXIMUM `h` IN CASE NORMALIZATION IS PREFERRED #
+        print("max h", np.max(hvals))
+        return np.max(hvals)
+    else:
+        return x1, x2, hvals
 
 
 
@@ -194,8 +207,8 @@ def plot_angles(a, grid, hjb_grid, obs_dict, pos=None, N_part=25):
     h = get_h_curr(a)
     s = a.spacing
     fig, ax = plt.subplots(figsize=(12,12))
-    plt.rc('xtick', labelsize=14)                                                
-    plt.rc('ytick', labelsize=14)                                                
+    plt.rc('xtick', labelsize=14)
+    plt.rc('ytick', labelsize=14)
 
     # ATTACH ANGLES TO EACH GRID POINT #
     pts = None
@@ -265,8 +278,8 @@ def _plot_angles(a, centers, thetas, grid, hjb_grid, obs_dict, pos=None, N_part=
     h = get_h(a)
     s = a.spacing
     fig, ax = plt.subplots(figsize=(12,12))
-    plt.rc('xtick', labelsize=14)                                                
-    plt.rc('ytick', labelsize=14)                                                
+    plt.rc('xtick', labelsize=14)
+    plt.rc('ytick', labelsize=14)
 
     # ATTACH ANGLES TO EACH GRID POINT #
     pts = None
@@ -328,12 +341,63 @@ def _plot_angles(a, centers, thetas, grid, hjb_grid, obs_dict, pos=None, N_part=
 
 
 
-def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, obstacles=None):
+def quad_plot(a, i, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, final_traj, colors, traj_idx, obstacles=None):
+
+    #matplotlib.use('ps')
+    #from matplotlib import rc
+
+    #rc('text',usetex=True)
+    #rc('text.latex', preamble=r'\usepackage{color}')
+    centers_last = np.expand_dims(np.array(centers[-1]), 0)
+    thetas_last = np.expand_dims(np.array(thetas[-1]), 0)
+
+    centers = np.array(centers)
+    thetas = np.array(thetas)
+
     h = get_h(a)
     s = a.spacing
     
     # system dimension
     d = curr_data.shape[-1]
+
+    #ax.set_title(r'x(t) under h', fontsize=20, y=0.9, color=colors[i])
+    if i < 3:
+        ax.text(-0.4, 0.70, r'x(t)', fontsize=25, color=colors[i], ha ='right',
+                path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+        ax.text(0.4, 0.70, r'$h_{}(x)$'.format(i+1), fontsize=25, color='grey', ha ='left',
+                path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+        ax.text(0.0, 0.70, ' under ', fontsize=25, color='black', ha ='center')
+    elif i == 3:
+        ax.text(-0.8, 0.70, r'x(t)', fontsize=25, color='magenta', ha ='right',
+                path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+        ax.text(0.0, 0.70, r'$\max_i\{h_i(x)\}$', fontsize=25, color='black', ha ='left')
+        ax.text(-0.4, 0.70, ' under ', fontsize=25, color='black', ha ='center')
+
+    #if i >= 0:
+    #    ax.set_axis_off()
+
+    obs_C = pat.Circle((0,0), 0.5, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
+    obs_C_outline = pat.Circle((0.015,-0.015), 0.502, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
+    ax.add_patch(obs_C_outline)
+    ax.add_patch(obs_C)
+
+    obs_L = pat.Rectangle((-2.275, -2.275), 0.525, 0.9 + 2.275, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+    #obs_L_outline = pat.Rectangle((-2.31, -2.31), 0.035, 0.9 + 2.32, color='black', alpha=0.80, linewidth=0)
+    obs_L_outline = pat.Rectangle((-2.31+0.035+0.525, -2.31+0.035), 0.035, 0.9 + 2.232-0.035, color='black', alpha=0.75, linewidth=0)
+    ax.add_patch(obs_L)
+    ax.add_patch(obs_L_outline)
+
+    obs_R = pat.Rectangle((2.275, -2.275), -0.525, 0.9 + 2.275, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+    obs_R_outline = pat.Rectangle((2.31, -2.31), -0.035, 0.9 + 2.232, color='black', alpha=0.75, linewidth=0)
+    ax.add_patch(obs_R)
+    ax.add_patch(obs_R_outline)
+
+    obs_C = pat.Rectangle((-1.75, -2.275), 3.5, 0.525, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+    obs_C_outline = pat.Rectangle((-2.31+0.035+0.088, -2.31), 3.5+2*0.525-0.088, 0.035, color='black', alpha=0.75, linewidth=0)
+    ax.add_patch(obs_C)
+    ax.add_patch(obs_C_outline)
+
+
 
     if d == 3:
         for x in curr_data:
@@ -344,12 +408,30 @@ def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, obst
             else:
                 B = pat.Wedge(x[:2], s/2, 360/(2*np.pi)*x[2] - 0.1, 360/(2*np.pi)*x[2] + 0.1, width=s/2, color='c')
                 ax.add_patch(B)
+            ax.plot(x[0], x[1], color="black", marker=".", linestyle="none", markersize="0.5")
+        '''
         for x in grid:
-            if obs_dict[tuple(np.round(x, 3))] != 0:
-                ax.plot(x[0], x[1], color="red"  , marker="*", linestyle="none")
-            else:
-                ax.plot(x[0], x[1], color="black", marker=".", linestyle="none")
-        ax.plot(traj[:,0], traj[:,1], color='magenta', marker=".")
+            if x[1] <= 0.9:
+                if obs_dict[tuple(np.round(x, 3))] != 0:
+                    ax.plot(x[0], x[1], color="black" , marker="s", linestyle="none")
+            #else:
+            #    ax.plot(x[0], x[1], color="black", marker=".", linestyle="none")
+        '''
+        if i < 3:
+            x_1, x_2, hvals = plot_cbf(a, centers_last, thetas_last, show_plots=False, angle=0, plot_max_cbf=False)
+            ax.contourf(x_1, x_2, hvals.T, levels=[0, 10], colors=['black', 'grey'], alpha=0.3, extend='max')#, extent=(-2, 2, -2, 0.5))
+        elif i==3:
+            x_1, x_2, hvals = plot_cbf(a, centers_last, thetas_last, show_plots=False, angle=0, plot_max_cbf=False)
+            ax.contourf(x_1, x_2, hvals.T, levels=[0, 10], colors=['black', 'grey'], alpha=0.0, extend='max')#, extent=(-2, 2, -2, 0.5))
+
+        if i < 3:
+            for j in range(i+1):
+                ax.plot(traj[traj_idx[j]:traj_idx[j+1],0], traj[traj_idx[j]:traj_idx[j+1],1], color=colors[j], marker=".")
+        elif i == 3:
+            for j in range(3):
+                ax.plot(traj[traj_idx[j]:traj_idx[j+1],0], traj[traj_idx[j]:traj_idx[j+1],1], color=colors[j], marker=".")
+            ax.plot(final_traj[:,0], final_traj[:,1], color='magenta', linestyle="--", linewidth=5)
+
 
     elif d == 2:
         width = a.width
@@ -366,11 +448,131 @@ def quad_plot(a, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, obst
         plt.rc('xtick', labelsize=14)
         plt.rc('ytick', labelsize=14)
         contour_plot  = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T)
-        ax.plot(obstacles[:,0], obstacles[:,1], "r.")
+        ax.plot(obstacles[:,0], obstacles[:,1], color="r", marker="s")
         ax.plot(traj[:,0], traj[:,1], color='magenta', marker=".")
         plt.clabel(contour_plot, inline=1, fontsize=8)
 
     return
+
+def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
+    width = a.width
+    h1 = get_h(a)#, jax_f=True)
+    h2 = get_h(a2)
+
+    plt.figure(figsize=(12, 12))
+    plt.rc('xtick', labelsize=14)
+    plt.rc('ytick', labelsize=14)
+
+
+    # BUILD GRID FOR CONTOUR PLOT #
+    for k, h in enumerate([h1, h2]):
+        ax = axs[k]
+        n  = 300
+        r  = np.ceil(width/2)
+        x1 = np.linspace(-r, r, num=n)
+        x2 = np.linspace(-r, r, num=n) 
+        hvals=None
+        pts = []
+        for i, x in enumerate(x1):
+            for j, y in enumerate(x2):
+                p = np.array([x, y])
+                pts.append(p)
+
+        # PARTITIONED, VECTORIZED COMPUTATION OF `h` AT GRIDPOINTS #
+        pts = np.array(pts)
+        N = pts.shape[0]
+        print("num data", N)
+        partition = int(N / N_part)
+        print("partition", partition)
+        remainder = N - (N_part * partition)
+        print("remainder", N % partition)
+        for i in tqdm(range(N_part+1)):
+            if i == N_part and remainder != 0:
+                idx_start = i * partition
+                idx_end = idx_start + remainder
+            elif i == N_part and remainder == 0:
+                break
+            else:
+                idx_start = i * partition
+                idx_end = (i+1) * partition 
+            X = pts[idx_start:idx_end]
+            #print(X.shape)
+            if hvals is None:
+                # FIX THIS
+                hvals = h(X, centers[k], thetas[k])[0]
+            else:
+                hvals = np.concatenate((hvals, h(X, centers[k], thetas[k])[0]))
+
+        hvals = hvals.reshape(n, n)
+        # MAKE CONTOUR PLOT FROM GRID #
+        # OLD: hvals = vmap(lambda s1: vmap(lambda s2: h_joint(jnp.array([s1, s2]), thetas, centers))(x2))(x1)
+        #color_map = plt.get_cmap('RdPu')
+        hmax = np.max(hvals)
+        #color_map.
+
+        if k == 0:
+            obs_C = pat.Circle((0.02,0.73), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
+            obs_C_outline = pat.Circle((0.010,0.72-0.015+0.020), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
+            ax.add_patch(obs_C_outline)
+            ax.add_patch(obs_C)
+
+            obs_R = pat.Rectangle((2.0, -2.0+0.1+0.8), -0.525, 4-0.8, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+            obs_R_outline = pat.Rectangle((2.027-0.010, -2.025+0.1+0.8+0.002), -0.020, 4-0.8-0.002, color='black', alpha=0.75, linewidth=0)
+            obs_R_outline2 = pat.Rectangle((2.027-0.010-0.020, -2.025+0.1+0.8+0.002), -0.525+0.044, 0.023, color='black', alpha=0.75, linewidth=0)
+
+            ax.add_patch(obs_R)
+            ax.add_patch(obs_R_outline)
+            ax.add_patch(obs_R_outline2)
+
+            obs_C = pat.Rectangle((-2.0+0.80, 2+0.1), 3.5-0.80, -0.525, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+            obs_C_outline = pat.Rectangle((-2.0+0.80+0.044, 2-0.525+0.1), 3.5-0.80-0.065, -0.020, color='black', alpha=0.75, linewidth=0)
+            ax.add_patch(obs_C)
+            ax.add_patch(obs_C_outline)
+
+
+            ax.invert_xaxis()
+            contour_plot = ax.contourf(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, cmap='winter_r',
+                            levels=np.linspace(0, hmax, 10))
+            #ax.colorbar()
+            #contour_plot = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, colors=['red', 'green', 'blue'], linestyles='solid', linewidths=2,
+            #                           levels=[0.50, 1, 1.5] )
+            contour_line = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, colors='black', linestyles='solid',linewidths=0.5,
+                                       levels=np.linspace(0, hmax, 15))
+        else:
+            obs_C = pat.Circle((0.02,0.72), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
+            obs_C_outline = pat.Circle((0.035-0.005,0.72-0.015+0.010), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
+            ax.add_patch(obs_C_outline)
+            ax.add_patch(obs_C)
+
+            obs_R = pat.Rectangle((2.0, -2.0+0.1+0.8), -0.525, 4-0.8, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+            obs_R_outline = pat.Rectangle((2.027-0.010, -2.025+0.1+0.8+0.002), -0.020, 4-0.8-0.002, color='black', alpha=0.75, linewidth=0)
+            obs_R_outline2 = pat.Rectangle((2.027-0.010-0.020, -2.025+0.1+0.8+0.002), -0.525+0.044, 0.023, color='black', alpha=0.75, linewidth=0)
+
+            ax.add_patch(obs_R)
+            ax.add_patch(obs_R_outline)
+            ax.add_patch(obs_R_outline2)
+
+            obs_C = pat.Rectangle((-2.0+0.80, 2+0.1), 3.5-0.80, -0.525, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+            obs_C_outline = pat.Rectangle((-2.0+0.80+0.044, 2-0.525+0.1), 3.5-0.80-0.065, -0.020, color='black', alpha=0.75, linewidth=0)
+            ax.add_patch(obs_C)
+            ax.add_patch(obs_C_outline)
+
+            contour_plot = ax.contourf(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, cmap='winter_r',
+                            levels=np.linspace(0, hmax, 10))
+            contour_line = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, colors='black', linestyles='solid',linewidths=0.5,
+                                       levels=np.linspace(0, hmax, 15))
+
+            #contour_plot = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, colors=['red', 'green', 'blue'], linestyles='dashed', linewidths=2,
+            #                           levels=[0.50, 1, 1.5] )
+            #outline_effect = pe.withStroke(linewidth=6, foreground='black')
+            #contour_plot.set_path_effects([outline_effect])
+            #lbl = ax.clabel(contour_plot, inline=1, fontsize=24, colors=['red', 'green', 'blue'])
+            #plt.setp(lbl, path_effects=[pe.withStroke(linewidth=2, foreground='black')])
+
+    
+    #plt.clabel(contour_plot, inline=1, fontsize=10, colors='black')
+
+    plt.show()
 
 
 

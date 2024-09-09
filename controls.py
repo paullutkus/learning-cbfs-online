@@ -7,6 +7,7 @@ from scipy.integrate import solve_ivp
 from scipy           import sparse
 from rbf             import get_Dphi, get_Dphi_curr, get_h, get_h_curr
 from jax             import vmap
+from copy            import copy, deepcopy
 
 
 
@@ -51,19 +52,28 @@ def get_xd_mpc(a, dt=0.01, bicycle=False):
 
 
 
-def get_slack_safety_filter(a, eps=0):
+def get_slack_safety_filter(a, eps=0, last_cbf=False):
     dynamics = a.dynamics
     f        = dynamics.open_loop_dynamics
     g        = dynamics.control_jacobian
     umax     = a.umax
     udim     = dynamics.disturbance_space.lo.shape[0]
-    thetas   = np.array(a.thetas)
-    centers  = np.array(a.centers)
     s        = a.s
     gamma    = a.gamma
-    h        = get_h(a)
-    Dphi     = get_Dphi(a)
-    solver  = a.solver
+    solver = a.solver
+    if last_cbf:
+        a_copy = deepcopy(a)
+        a_copy.thetas = [a_copy.thetas[-1]]
+        a_copy.centers = [a_copy.centers[-1]]
+        h = get_h(a_copy)
+        Dphi = get_Dphi(a_copy)
+        thetas = np.array(a_copy.thetas)
+        centers = np.array(a_copy.centers)
+    else:
+        h = get_h(a)
+        Dphi = get_Dphi(a)
+        thetas = np.array(a.thetas)
+        centers = np.array(a.centers)
 
     def safety_filter(x, ud):
         #vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -95,9 +105,9 @@ def get_slack_safety_filter(a, eps=0):
 
         prob = cp.Problem(obj, cons)
         prob.solve(solver=solver, verbose=False)
-        if u.value is not None:
-            if (u.value[:-1] > umax).any():
-                print("val", u.value, "max", umax)
+        #if u.value is not None:
+        #    if (u.value[:-1] > umax).any():
+        #        print("val", u.value, "max", umax)
         #print("safe u", u.value)
         #print("slack variable", u.value[-1])
         return u.value[:-1], u.value[-1]
@@ -168,25 +178,30 @@ def get_cbvf_safety_filter(a, grid, V):
     s        = a.s
     gamma    = a.gamma
     solver  = a.solver
+    grid    = grid
+    V       = V
 
     def cbvf_safety_filter(x, ud):
         cons = []
         u    = cp.Variable(udim + 1)
         ue   = u[:-1] - ud
         obj  = cp.Minimize( cp.quad_form(ue, np.eye(udim)) + 1e7*u[-1])
+        #obj = cp.Maximize(grid.interpolate(grid.grad_values(V), x).T @ g(x,0) @ u[:-1])
+        print("grad", grid.interpolate(grid.grad_values(V), x))
+
         #hmax, i = h(x, centers, thetas)
         #print("hmax", hmax) 
         #print("x", x)
         cons.append(grid.interpolate(grid.grad_values(V), x) @ (f(x,0) + g(x,0) @ u[:-1]) + \
                     gamma*grid.interpolate(V, x) + u[-1] >= 0)
-        cons.append(u <=  umax)
-        cons.append(u >= -umax)
+        cons.append(u[:-1] <=  umax)
+        cons.append(u[:-1] >= -umax)
         cons.append(u[-1] >= 0)
 
         prob = cp.Problem(obj, cons)
         prob.solve(solver=solver, verbose=False)
-        if u.value[-1] >= 0.01:
-            print("slack:", u.value[-1])
+        #if u.value[-1] >= 0.01:
+        #    print("slack:", u.value[-1])
         #print("safe u", u.value)
         return u.value[:-1], u.value[-1]
     

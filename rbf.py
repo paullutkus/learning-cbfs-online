@@ -261,14 +261,16 @@ def get_Dphi_curr(a):
     return Dphi
 
 
-def jax_phiT(x, C, s, thscl): # is a column vector
+def jax_phiT(x, C, s, thscl=None): # is a column vector
     #print("x shape", x.shape)
     #print("x[...,jnp.newaxis,:] shape", x[...,jnp.newaxis,:].shape)
     #print("C shape", C.shape)
-    D = x[...,jnp.newaxis,:] - C
-    #print("D shape", D.shape)
-    r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
-    #print("r shape", r.shape)
+    if thscl is not None:
+        D = x[...,jnp.newaxis,:] - C
+        r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
+    else:
+        D = x[...,jnp.newaxis,:] - C
+        r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2)
 
     #r  = jnp.sqrt(w + ((x[...,jnp.newaxis,:] - C)**2).sum(axis=-1))
 
@@ -280,20 +282,25 @@ def jax_phiT(x, C, s, thscl): # is a column vector
 def jax_get_phiT(a):
     s  = a.s
     thscl = a.theta_scale
-    #phiT = Partial(jax_phiT, s=s, thscl=thscl)
+    phiT = Partial(jax_phiT, s=s, thscl=thscl)
+    '''
     def phiT(x, C): # is a column vector
+        if thscl is not None:
+            D = x[...,jnp.newaxis,:] - C
+            r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
+        else:
+            D = x[...,jnp.newaxis,:] - C
+            r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2)
         #print("x shape", x.shape)
         #print("C shape", C.shape)
-        D = x[...,jnp.newaxis,:] - C
         #print("D shape", D.shape)
-        r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
         #print("r shape", r.shape)
-
         #r  = jnp.sqrt(w + ((x[...,jnp.newaxis,:] - C)**2).sum(axis=-1))
 
         phi = jnp.maximum(0, 1 - r)**4 * (1 + 4*r)/20
         #print("phi shape", phi.shape)
         return phi
+    '''
     return phiT
 
 

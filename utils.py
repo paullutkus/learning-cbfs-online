@@ -511,23 +511,32 @@ def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
         #color_map.
 
         if k == 0:
+            ax.set_ylim(-2.2, 2.2)
+            ax.set_xlim(-2.2, 2.2)
+            ax.autoscale(False)
             obs_C = pat.Circle((0.02,0.73), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
             obs_C_outline = pat.Circle((0.010,0.72-0.015+0.020), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
             ax.add_patch(obs_C_outline)
             ax.add_patch(obs_C)
 
             obs_R = pat.Rectangle((2.0, -2.0+0.1+0.8), -0.525, 4-0.8, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
-            obs_R_outline = pat.Rectangle((2.027-0.010, -2.025+0.1+0.8+0.002), -0.020, 4-0.8-0.002, color='black', alpha=0.75, linewidth=0)
-            obs_R_outline2 = pat.Rectangle((2.027-0.010-0.020, -2.025+0.1+0.8+0.002), -0.525+0.044, 0.023, color='black', alpha=0.75, linewidth=0)
+            #obs_R_outline = pat.Rectangle((2.027-0.010, -2.025+0.1+0.8+0.002+0.023), -0.020, 4-0.8-0.002-0.525-0.044, color='black', alpha=0.75, linewidth=0)
+            obs_R_outline = pat.Rectangle((2.0-0.525-0.020, -2.025+0.1+0.8+0.002+0.023), 0.020, 4-0.8-0.002-0.525-0.020+0.020, color='black', alpha=0.75, linewidth=0)
+            #obs_R_outline2 = pat.Rectangle((2.027-0.010-0.020, -2.025+0.1+0.8+0.002), -0.525+0.044, 0.023, color='black', alpha=0.75, linewidth=0)
+            obs_R_outline2 = pat.Rectangle((2.0-0.525-0.020, -2.025+0.1+0.8+0.002), 0.525-0.044, 0.023, color='black', alpha=0.75, linewidth=0)
+
 
             ax.add_patch(obs_R)
             ax.add_patch(obs_R_outline)
             ax.add_patch(obs_R_outline2)
 
             obs_C = pat.Rectangle((-2.0+0.80, 2+0.1), 3.5-0.80, -0.525, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
-            obs_C_outline = pat.Rectangle((-2.0+0.80+0.044, 2-0.525+0.1), 3.5-0.80-0.065, -0.020, color='black', alpha=0.75, linewidth=0)
+            obs_C_outline = pat.Rectangle((-2.0+0.80-0.044+0.020, 2-0.525+0.1), 3.5-0.80-0.065+0.044, -0.020, color='black', alpha=0.75, linewidth=0)
+            obs_C_outline2 = pat.Rectangle((-2.0+0.80-0.044+0.020, 2-0.525+0.1), 0.023, 0.525-0.044 , color='black', alpha=0.75, linewidth=0)
+
             ax.add_patch(obs_C)
             ax.add_patch(obs_C_outline)
+            ax.add_patch(obs_C_outline2)
 
 
             ax.invert_xaxis()
@@ -539,6 +548,10 @@ def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
             contour_line = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, colors='black', linestyles='solid',linewidths=0.5,
                                        levels=np.linspace(0, hmax, 15))
         else:
+            ax.set_ylim(-2.2, 2.2)
+            ax.set_xlim(-2.2, 2.2)
+            ax.autoscale(False)
+
             obs_C = pat.Circle((0.02,0.72), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
             obs_C_outline = pat.Circle((0.035-0.005,0.72-0.015+0.010), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
             ax.add_patch(obs_C_outline)

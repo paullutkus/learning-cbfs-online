@@ -360,6 +360,11 @@ def quad_plot(a, i, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, f
     # system dimension
     d = curr_data.shape[-1]
 
+    ax.set_ylim(-2.5, 1.0)
+    ax.set_xlim(-2.5, 2.5)
+    ax.autoscale(False)
+
+
     #ax.set_title(r'x(t) under h', fontsize=20, y=0.9, color=colors[i])
     if i < 3:
         ax.text(-0.4, 0.70, r'x(t)', fontsize=25, color=colors[i], ha ='right',
@@ -454,14 +459,24 @@ def quad_plot(a, i, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, f
 
     return
 
-def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
+
+def performance_comparison(a, fig, a2, axs, centers, thetas, trajecs, vs, usigs, N_part=20):
     width = a.width
     h1 = get_h(a)#, jax_f=True)
     h2 = get_h(a2)
 
-    plt.figure(figsize=(12, 12))
-    plt.rc('xtick', labelsize=14)
-    plt.rc('ytick', labelsize=14)
+    traj1 = trajecs[0]
+    traj2 = trajecs[1]
+
+    v1 = vs[0]
+    v2 = vs[1]
+
+    usig = usigs[0]
+    usig2 = usigs[1]
+
+    #plt.figure(figsize=(12, 12))
+    #plt.rc('xtick', labelsize=14)
+    #plt.rc('ytick', labelsize=14)
 
 
     # BUILD GRID FOR CONTOUR PLOT #
@@ -511,19 +526,24 @@ def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
         #color_map.
 
         if k == 0:
-            ax.set_ylim(-2.2, 2.2)
-            ax.set_xlim(-2.2, 2.2)
+            ax.set_ylim(-1.2, 2.5)
+            ax.set_xlim(-2.2+0.95, 2.2)
             ax.autoscale(False)
+
+            ax.text(0.9, 2.2, r'x(t)', fontsize=36, color='#351463', ha ='right',
+            path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+            ax.text(0.3, 2.2, r'$\max_i\{h_i|X_i\}$', fontsize=36, color='black', ha ='left')
+            ax.text(0.6, 2.2, ' under ', fontsize=36, color='black', ha ='center')
+
+
             obs_C = pat.Circle((0.02,0.73), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
             obs_C_outline = pat.Circle((0.010,0.72-0.015+0.020), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
             ax.add_patch(obs_C_outline)
             ax.add_patch(obs_C)
 
             obs_R = pat.Rectangle((2.0, -2.0+0.1+0.8), -0.525, 4-0.8, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
-            #obs_R_outline = pat.Rectangle((2.027-0.010, -2.025+0.1+0.8+0.002+0.023), -0.020, 4-0.8-0.002-0.525-0.044, color='black', alpha=0.75, linewidth=0)
-            obs_R_outline = pat.Rectangle((2.0-0.525-0.020, -2.025+0.1+0.8+0.002+0.023), 0.020, 4-0.8-0.002-0.525-0.020+0.020, color='black', alpha=0.75, linewidth=0)
-            #obs_R_outline2 = pat.Rectangle((2.027-0.010-0.020, -2.025+0.1+0.8+0.002), -0.525+0.044, 0.023, color='black', alpha=0.75, linewidth=0)
-            obs_R_outline2 = pat.Rectangle((2.0-0.525-0.020, -2.025+0.1+0.8+0.002), 0.525-0.044, 0.023, color='black', alpha=0.75, linewidth=0)
+            obs_R_outline = pat.Rectangle((2.0-0.525-0.020, -2.025+0.1+0.8+0.002+0.023), 0.020, 4-0.8-0.002-0.525-0.020+0.022, color='black', alpha=0.75, linewidth=0)
+            obs_R_outline2 = pat.Rectangle((2.0-0.525-0.020, -2.025+0.1+0.8+0.002), 0.525-0.044+0.020, 0.023, color='black', alpha=0.75, linewidth=0)
 
 
             ax.add_patch(obs_R)
@@ -531,8 +551,8 @@ def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
             ax.add_patch(obs_R_outline2)
 
             obs_C = pat.Rectangle((-2.0+0.80, 2+0.1), 3.5-0.80, -0.525, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
-            obs_C_outline = pat.Rectangle((-2.0+0.80-0.044+0.020, 2-0.525+0.1), 3.5-0.80-0.065+0.044, -0.020, color='black', alpha=0.75, linewidth=0)
-            obs_C_outline2 = pat.Rectangle((-2.0+0.80-0.044+0.020, 2-0.525+0.1), 0.023, 0.525-0.044 , color='black', alpha=0.75, linewidth=0)
+            obs_C_outline = pat.Rectangle((-2.0+0.80-0.044+0.022, 2-0.525+0.1), 3.5-0.80-0.065+0.044-0.002, -0.020, color='black', alpha=0.75, linewidth=0)
+            obs_C_outline2 = pat.Rectangle((-2.0+0.80-0.044+0.022, 2-0.525+0.1), 0.023, 0.525-0.044+0.020 , color='black', alpha=0.75, linewidth=0)
 
             ax.add_patch(obs_C)
             ax.add_patch(obs_C_outline)
@@ -547,10 +567,22 @@ def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
             #                           levels=[0.50, 1, 1.5] )
             contour_line = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, colors='black', linestyles='solid',linewidths=0.5,
                                        levels=np.linspace(0, hmax, 15))
+            ax.plot(traj2[:,0], traj2[:,1], color='#fcd69a', linestyle='dashed', linewidth=3, path_effects=[pe.withStroke(linewidth=5,foreground='black')]) #f6ff00
+            ax.plot(traj1[:,0], traj1[:,1], color='#351463', linestyle='solid', linewidth=3, path_effects=[pe.withStroke(linewidth=5,foreground='black')]) #cb0e40
+            ax.plot(traj1[-1,0], traj1[-1,1], color='red', marker='*', ms=20, markeredgecolor='black')
+
+
+
         else:
-            ax.set_ylim(-2.2, 2.2)
-            ax.set_xlim(-2.2, 2.2)
+            ax.set_ylim(-1.2, 2.5)
+            ax.set_xlim(-2.2+0.95, 2.2)
             ax.autoscale(False)
+
+            ax.text(-0.3, 2.2, r'x(t)', fontsize=36, color='#fcd69a', ha ='right',
+            path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+            ax.text(0.3, 2.2, r'$h|\bigcup_i X_i$', fontsize=36, color='black', ha ='left')
+            ax.text(0.0, 2.2, ' under ', fontsize=36, color='black', ha ='center')
+
 
             obs_C = pat.Circle((0.02,0.72), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
             obs_C_outline = pat.Circle((0.035-0.005,0.72-0.015+0.010), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
@@ -574,6 +606,10 @@ def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
                             levels=np.linspace(0, hmax, 10))
             contour_line = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, colors='black', linestyles='solid',linewidths=0.5,
                                        levels=np.linspace(0, hmax, 15))
+            ax.plot(traj1[:,0], traj1[:,1], color='#351463', linestyle='dashed', linewidth=3, path_effects=[pe.withStroke(linewidth=5,foreground='black')])
+            ax.plot(traj2[:,0], traj2[:,1], color='#fcd69a', linestyle='solid', linewidth=3, path_effects=[pe.withStroke(linewidth=5,foreground='black')])
+            ax.plot(traj1[-1,0], traj1[-1,1], color='red', marker='*', ms=20, markeredgecolor='black')
+
 
             #contour_plot = ax.contour(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, colors=['red', 'green', 'blue'], linestyles='dashed', linewidths=2,
             #                           levels=[0.50, 1, 1.5] )
@@ -584,7 +620,39 @@ def performance_comparison(a, a2, axs, centers, thetas, N_part=20):
 
     
     #plt.clabel(contour_plot, inline=1, fontsize=10, colors='black')
+    #for k, ax in enumerate(axs[2]):
+    print(k)
+    ax = axs[2]
+    #if k == 0 :
+    ax.set_title('2-Norm of Control and Speed vs. Time', fontsize=36)
+    ax.plot(v1[:-1], color="#351463", linewidth=4, label=r'$\mathrm{Max CBF:\ } v(t)$',linestyle='dashed', alpha=0.25)#path_effects=[pe.withStroke(linewidth=5, foreground='black')], 
+    ax.plot(v2[:-1], color="#fcd69a", linewidth=4, label=r'$\textrm{CBF (all data):\ } v(t)$',linestyle='dashed', alpha=0.75) #path_effects=[pe.withStroke(linewidth=6, foreground='black')], linestyle='dashed', alpha=0.5)
 
+    ax.tick_params(axis='both', direction='in', labelsize=24)
+    ax.grid()
+    #ax.set_xticks(fontsize=24)
+    ax.set_ylabel(r'$v(t)$', fontsize=24)
+    ax.set_xlabel(r'$t$', fontsize=24)
+    ax.legend(fontsize=24)
+    #if k == 1:
+    ax.plot(np.linalg.norm(usig, axis=1), color="#351463", label=r'$\mathrm{Max CBF:\ }\|u(t)\|$', linewidth=4, path_effects=[pe.withStroke(linewidth=5, foreground='black')])
+    ax.plot(len(usig), np.linalg.norm(usig, axis=1)[-1], color='red', marker='*', ms=23, markeredgecolor='black')
+
+    ax.plot(np.linalg.norm(usig2, axis=1), color="#fcd69a", label=r'$\textrm{CBF (all data):\ }\|u(t)\|$', linewidth=4, path_effects=[pe.withStroke(linewidth=5, foreground='black')])
+    ax.plot(len(usig2), np.linalg.norm(usig2, axis=1)[-1], color='red', marker='*', ms=23, markeredgecolor='black')
+
+    ax.set_ylabel(r'$\|u(t)\|, v(t)$', fontsize=36)
+    ax.set_xlabel(r'$t$', fontsize=36)
+    ax.legend(fontsize=24)
+
+    #fig.tight_layout()
+    '''
+    box = axs[0].get_position()
+    box.x0 = box.x0-5
+    box.x1 = box.x1+5
+    axs[0].set_position(box)
+    '''
+    fig.subplots_adjust(left=0.00, right=1.00,bottom=0.00, top=1.00, wspace=-0.0, hspace=-0.3)
     plt.show()
 
 

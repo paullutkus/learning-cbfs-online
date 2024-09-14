@@ -18,12 +18,6 @@ def get_L_safe(a, gamma_safe, gamma_dyn, lam_safe, lam_dyn, centers=None):
     b = a.b
     def L_safe(theta, x_safe, u_safe):
         x_safe = jnp.expand_dims(x_safe,0)
-        #print("phi shape", phi(x_safe,C).shape)
-        #print("theta shape", theta.shape)
-        #print((phi(x_safe, C) @ theta).shape)
-        #print("Dphi(x_safe,C) shape", Dphi(x_safe, C).shape)
-        #print("theta @ Dphi(x_safe,C) shape", (theta @ Dphi(x_safe,C)).shape)
-        #print("(f(x_safe[0],0) + g(x_safe[0],0) @ u_safe)", (f(x_safe[0],0) + g(x_safe[0],0) @ u_safe).shape)
         Lv = lam_safe * jnp.maximum(0, gamma_safe - phi(x_safe,C) @ theta - b)**2
         Ldyn = lam_dyn * jnp.maximum(0, gamma_dyn  - theta @ Dphi(x_safe,C) @ (f(x_safe[0],0) + g(x_safe[0],0) @ u_safe) - phi(x_safe,C) @ theta - b)**2
         L = Lv + Ldyn

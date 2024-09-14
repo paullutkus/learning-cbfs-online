@@ -28,7 +28,10 @@ class Agent:
                                                              spacing = None,
                                                              obstacles=None,
                                                              jax_f   = False,
-                                                             solver  ='CLARABEL'):
+                                                             solver  ='CLARABEL',
+                                                             eps     = 1e-3,
+                                                             almost_active=False):
+
         self.dynamics      = dynamics
         self.pos           = pos
         self.grid          = grid
@@ -50,6 +53,8 @@ class Agent:
         self.centers       = []
         self.obstacles     = obstacles
         self.Nc_max        = None
+        self.almost_active = almost_active
+        self.eps           = eps
 
 
     def scan(self, ret_in_scan_f=False):
@@ -320,8 +325,8 @@ class Agent:
             N = int(tend / sim_DT) # NUM ITERATIONS
 
             for i in tqdm(range(N)):
-                if i % 100 == 0:
-                    print("state:", y)
+                #if i % 100 == 0:
+                #   print("state:", y)
                 if np.linalg.norm(y - target) <= 1e-2:
                     print("breaking, approached target")
                     break
@@ -435,5 +440,5 @@ class Agent:
         else:
             print("h is now", h(self.pos[np.newaxis,...])[0])
 
-        return traj, usig, total_slack
+        return traj, usig, total_slack, hxt
 

@@ -423,10 +423,10 @@ def quad_plot(a, i, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, f
             #    ax.plot(x[0], x[1], color="black", marker=".", linestyle="none")
         '''
         if i < 3:
-            x_1, x_2, hvals = plot_cbf(a, centers_last, thetas_last, show_plots=False, angle=0, plot_max_cbf=False)
+            x_1, x_2, hvals = plot_cbf(a, centers_last, thetas_last, show_plots=False, angle=0, plot_max_cbf=True)
             ax.contourf(x_1, x_2, hvals.T, levels=[0, 10], colors=['black', 'grey'], alpha=0.3, extend='max')#, extent=(-2, 2, -2, 0.5))
         elif i==3:
-            x_1, x_2, hvals = plot_cbf(a, centers_last, thetas_last, show_plots=False, angle=0, plot_max_cbf=False)
+            x_1, x_2, hvals = plot_cbf(a, centers_last, thetas_last, show_plots=False, angle=0, plot_max_cbf=True)
             ax.contourf(x_1, x_2, hvals.T, levels=[0, 10], colors=['black', 'grey'], alpha=0.0, extend='max')#, extent=(-2, 2, -2, 0.5))
 
         if i < 3:
@@ -458,6 +458,100 @@ def quad_plot(a, i, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, f
         plt.clabel(contour_plot, inline=1, fontsize=8)
 
     return
+
+
+
+def cbf_sdf_plot(a, i, ax, cbf_traj, sdf_traj, ht, centers, thetas):
+
+    #matplotlib.use('ps')
+    #from matplotlib import rc
+
+    #rc('text',usetex=True)
+    #rc('text.latex', preamble=r'\usepackage{color}')
+    centers = np.array(centers)
+    thetas = np.array(thetas)
+
+    h = get_h(a)
+    s = a.spacing 
+
+
+    #ax.set_title(r'x(t) under h', fontsize=20, y=0.9, color=colors[i])
+    '''
+    if i < 3:
+        ax.text(-0.4, 0.70, r'x(t)', fontsize=25, color=colors[i], ha ='right',
+                path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+        ax.text(0.4, 0.70, r'$h_{}(x)$'.format(i+1), fontsize=25, color='grey', ha ='left',
+                path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+        ax.text(0.0, 0.70, ' under ', fontsize=25, color='black', ha ='center')
+    elif i == 3:
+        ax.text(-0.8, 0.70, r'x(t)', fontsize=25, color='magenta', ha ='right',
+                path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+        ax.text(0.0, 0.70, r'$\max_i\{h_i(x)\}$', fontsize=25, color='black', ha ='left')
+        ax.text(-0.4, 0.70, ' under ', fontsize=25, color='black', ha ='center')
+    '''
+
+    #if i >= 0:
+    #    ax.set_axis_off()
+
+    if i == 0:
+        ax.set_ylim(-2.31, 0.9)
+        ax.set_xlim(-2.31, 1.0)
+        ax.autoscale(False)
+
+
+        obs_C = pat.Circle((0,0), 0.5, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
+        obs_C_outline = pat.Circle((0.015,-0.015), 0.50, color='black', alpha=0.75, linewidth=6, fill=None, zorder=0)
+        ax.add_patch(obs_C_outline)
+        ax.add_patch(obs_C)
+
+        obs_L = pat.Rectangle((-2.275, -2.275), 0.525, 0.9 + 2.275, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+        #obs_L_outline = pat.Rectangle((-2.31, -2.31), 0.035, 0.9 + 2.32, color='black', alpha=0.80, linewidth=0)
+        obs_L_outline = pat.Rectangle((-2.31+0.035+0.525, -2.31+0.035), 0.035, 0.9 + 2.232-0.035, color='black', alpha=0.75, linewidth=0)
+        ax.add_patch(obs_L)
+        ax.add_patch(obs_L_outline)
+
+        '''
+        obs_R = pat.Rectangle((2.275, -2.275), -0.525, 0.9 + 2.275, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+        obs_R_outline = pat.Rectangle((2.31, -2.31), -0.035, 0.9 + 2.232, color='black', alpha=0.75, linewidth=0)
+        ax.add_patch(obs_R)
+        ax.add_patch(obs_R_outline)
+        '''
+
+        obs_C = pat.Rectangle((-1.75, -2.275), 0.9+2.275-0.525, 0.525, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+        obs_C_outline = pat.Rectangle((-2.31+2*0.035+0.035, -2.31), 0.9+2.275-0.035, 0.035, color='black', alpha=0.75, linewidth=0)
+        obs_C_outline2= pat.Rectangle((-2.31+2*0.035+0.035+0.9+2.275-0.035, -2.275),-0.035, 0.525-2*0.035, color='black', alpha=0.75, linewidth=0)
+        ax.add_patch(obs_C)
+        ax.add_patch(obs_C_outline)
+        ax.add_patch(obs_C_outline2)
+
+        scan = pat.Circle((-1, -1), 1, edgecolor='red', linewidth=5, fill=False, linestyle=':', capstyle='round', alpha=0.66)
+        ax.add_patch(scan)
+
+        x_1, x_2, hvals = plot_cbf(a, centers, thetas, show_plots=False, angle=0, plot_max_cbf=True)
+        contour_plot = ax.contourf(x_1, x_2, hvals.T, cmap='winter_r',
+                                  levels=np.linspace(0, np.max(hvals), 5))
+        contour_line = ax.contour(x_1, x_2, hvals.T, colors='black', linestyles='solid',linewidths=0.5,
+                           levels=np.linspace(0, np.max(hvals), 10))
+
+ 
+        ax.plot(cbf_traj[:,0], cbf_traj[:,1], color='magenta', linestyle='solid', linewidth=5, path_effects=[pe.withStroke(linewidth=6,foreground='black')], 
+                solid_capstyle='round', label="CBF")
+        ax.plot(sdf_traj[:,0], sdf_traj[:,1], color='gold',  linestyle='solid', linewidth=5, path_effects=[pe.withStroke(linewidth=6,foreground='black')], 
+                solid_capstyle='round', label="SDF")
+        ax.legend(fontsize=26, loc=(0.80, 0.86))
+
+    elif i == 1:
+        ax.set_ylabel(r'$h(t)$', fontsize=36)
+        ax.set_xlabel(r'$t$', fontsize=36)
+        #ax.legend(fontsize=24)
+        ax.tick_params(axis='both', direction='in', labelsize=16)
+        ax.grid()
+        zeroline = np.zeros(len(ht))
+        ax.plot(ht, color='magenta')
+        ax.plot(zeroline, linestyle='dashed', alpha=1.0, linewidth=3, color='k')
+
+    return
+
 
 
 def performance_comparison(a, fig, a2, axs, centers, thetas, trajecs, vs, usigs, N_part=20):
@@ -530,17 +624,27 @@ def performance_comparison(a, fig, a2, axs, centers, thetas, trajecs, vs, usigs,
             ax.set_xlim(-2.2+0.95, 2.2)
             ax.autoscale(False)
 
-            ax.text(0.9, 2.2, r'x(t)', fontsize=36, color='#351463', ha ='right',
+            
+            #ax.text(0.9, 2.2, r'x(t)', fontsize=36, color='#351463', ha ='right',
+            #path_effects=[pe.withStroke(linewidth=1, foreground="black")])
+            #ax.text(0.3, 2.2, r'$\max_i\{h_i|X_i\}$', fontsize=36, color='black', ha ='left')
+            #ax.text(0.6, 2.2, ' under ', fontsize=36, color='black', ha ='center')
+            ax.text(-0.3, 2.2, r'x(t)', fontsize=36, color='#351463', ha ='right',
             path_effects=[pe.withStroke(linewidth=1, foreground="black")])
             ax.text(0.3, 2.2, r'$\max_i\{h_i|X_i\}$', fontsize=36, color='black', ha ='left')
-            ax.text(0.6, 2.2, ' under ', fontsize=36, color='black', ha ='center')
+            ax.text(0.0, 2.2, ' under ', fontsize=36, color='black', ha ='center')
 
 
-            obs_C = pat.Circle((0.02,0.73), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
-            obs_C_outline = pat.Circle((0.010,0.72-0.015+0.020), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
+            #obs_C = pat.Circle((0.02,0.73), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
+            #obs_C_outline = pat.Circle((0.010,0.72-0.015+0.020), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
+            obs_C = pat.Circle((0.00,0.74), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
+            obs_C_outline = pat.Circle((0.010,0.74-0.010), 0.490, color='black', alpha=0.75, linewidth=5, fill=None, zorder=0)
+
+
             ax.add_patch(obs_C_outline)
             ax.add_patch(obs_C)
 
+            '''
             obs_R = pat.Rectangle((2.0, -2.0+0.1+0.8), -0.525, 4-0.8, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
             obs_R_outline = pat.Rectangle((2.0-0.525-0.020, -2.025+0.1+0.8+0.002+0.023), 0.020, 4-0.8-0.002-0.525-0.020+0.022, color='black', alpha=0.75, linewidth=0)
             obs_R_outline2 = pat.Rectangle((2.0-0.525-0.020, -2.025+0.1+0.8+0.002), 0.525-0.044+0.020, 0.023, color='black', alpha=0.75, linewidth=0)
@@ -557,9 +661,22 @@ def performance_comparison(a, fig, a2, axs, centers, thetas, trajecs, vs, usigs,
             ax.add_patch(obs_C)
             ax.add_patch(obs_C_outline)
             ax.add_patch(obs_C_outline2)
+            '''
+            obs_R = pat.Rectangle((2.0, -2.0+0.1+0.8), -0.525, 4-0.8, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+            obs_R_outline = pat.Rectangle((2.027-0.010, -2.025+0.1+0.8+0.002), -0.020, 4-0.8-0.002, color='black', alpha=0.75, linewidth=0)
+            obs_R_outline2 = pat.Rectangle((2.027-0.010-0.020, -2.025+0.1+0.8+0.002), -0.525+0.044, 0.023, color='black', alpha=0.75, linewidth=0)
+
+            ax.add_patch(obs_R)
+            ax.add_patch(obs_R_outline)
+            ax.add_patch(obs_R_outline2)
+
+            obs_C = pat.Rectangle((-2.0+0.80, 2+0.1), 3.5-0.80, -0.525, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, edgecolor='dimgrey')
+            obs_C_outline = pat.Rectangle((-2.0+0.80+0.044, 2-0.525+0.1), 3.5-0.80-0.065, -0.020, color='black', alpha=0.75, linewidth=0)
+            ax.add_patch(obs_C)
+            ax.add_patch(obs_C_outline)
 
 
-            ax.invert_xaxis()
+            #ax.invert_xaxis()
             contour_plot = ax.contourf(np.linspace(-r, r, num=n), np.linspace(-r, r, num=n), hvals.T, cmap='winter_r',
                             levels=np.linspace(0, hmax, 10))
             #ax.colorbar()
@@ -584,8 +701,10 @@ def performance_comparison(a, fig, a2, axs, centers, thetas, trajecs, vs, usigs,
             ax.text(0.0, 2.2, ' under ', fontsize=36, color='black', ha ='center')
 
 
-            obs_C = pat.Circle((0.02,0.72), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
-            obs_C_outline = pat.Circle((0.035-0.005,0.72-0.015+0.010), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
+            #obs_C = pat.Circle((0.00,0.75), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
+            #obs_C_outline = pat.Circle((0.035-0.005,0.72-0.015+0.010), 0.495, color='black', alpha=0.75, linewidth=4, fill=None, zorder=0)
+            obs_C = pat.Circle((0.00,0.74), 0.490, facecolor='darkgrey', alpha=1.00, hatch='////', linewidth=0, zorder=1, edgecolor='dimgrey')
+            obs_C_outline = pat.Circle((0.010,0.74-0.010), 0.490, color='black', alpha=0.75, linewidth=5, fill=None, zorder=0)
             ax.add_patch(obs_C_outline)
             ax.add_patch(obs_C)
 
@@ -652,7 +771,7 @@ def performance_comparison(a, fig, a2, axs, centers, thetas, trajecs, vs, usigs,
     box.x1 = box.x1+5
     axs[0].set_position(box)
     '''
-    fig.subplots_adjust(left=0.00, right=1.00,bottom=0.00, top=1.00, wspace=-0.0, hspace=-0.3)
+    fig.subplots_adjust(left=0.00, right=1.00,bottom=0.00, top=1.00, wspace=-0.0, hspace=-0.2) #-0.3
     plt.show()
 
 

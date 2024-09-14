@@ -9,7 +9,6 @@ from   rbf       import phiT, get_phiT, get_phiT_curr, get_Dphi, get_Dphi_curr, 
 from   jax_optim import jax_get_learning_cbfs_lagrangian
 from   scipy     import sparse
 from   distances import cylindrical_metric
-
 import matplotlib.pyplot as plt
 
 
@@ -105,53 +104,6 @@ def cvx_train_cbf(a, x_safe  , u_safe  ,
     return theta.value.flatten()
 
 
-def clarabel_fit_cbf(a, x_safe  , u_safe  ,
-                          x_buffer, u_buffer,
-                          x_unsafe, gamma_safe, gamma_dyn, gamma_unsafe):
-    fv   = vmap(a.dynamics.open_loop_dynamics, in_axes=(0, None))
-    gv   = vmap(a.dynamics.control_jacobian  , in_axes=(0, None))
-    phiT = get_phiT(a)
-    Dphi = get_Dphi(a)
-    C    = a.centers[-1]
-    o    = a.b
-
-    ns = x_safe.shape[0]
-    nb = x_buffer.shape[0]
-    nu = x_unsafe.shape[0]
-
-
-    P = sparse.csc_array(np.eye(C.shape[0]))
-    q = np.zeros(C.shape[0])
-    b = np.concatenate([-gamma_safe  *np.ones(ns) + o*np.ones(ns),
-                         gamma_unsafe*np.ones(nu) - o*np.ones(nu),
-                        -gamma_dyn*np.ones(ns+nb) + o*np.ones(ns+nb)])
-
-    #A = sparse.csc_array(np.vstack( phiT(x,C),
-    #    DphiT(x,C),)
-
-
-    if u_buffer.shape[0] != 0:
-        A = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
-                                          phiT(x_unsafe,C),
-                                      -((Dphi(x_safe  ,C) @ (fv(x_safe  ,0) + (gv(x_safe  ,0) @   u_safe[:,np.newaxis,:]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_safe  ,C)),
-                                      -((Dphi(x_buffer,C) @ (fv(x_buffer,0) + (gv(x_buffer,0) @ u_buffer[:,np.newaxis,:]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_buffer,C))
-                                      ))
-                            )
-    else:
-        A = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
-                                          phiT(x_unsafe,C),
-                                      -((Dphi(x_safe,C) @ (fv(x_safe,0) + (gv(x_safe,0) @ u_safe[:,np.newaxis,:]).squeeze())[...,np.newaxis]).squeeze() + phiT(x_safe,C))
-                                      ))
-                            )
-    cone = [clarabel.NonnegativeConeT(A.shape[0])]
-
-    print("problem done building")
-    settings = clarabel.DefaultSettings()
-    solver   = clarabel.DefaultSolver(P, q, A, b, cone, settings)
-    solution = solver.solve()
-    return solution.x
-
-
 # fit cbf or cbvf data by inverting system of equations
 def fit_cbf_w_inv(a, X, rhs):
     phiT = get_phiT(a)
@@ -179,7 +131,6 @@ def gradient_descent(a, theta, it, eps, mu, tol, x_safe, u_safe, x_buffer, u_buf
         L = get_learning_cbfs_lagrangian(a, x_safe, u_safe, x_buffer, u_buffer, x_unsafe, u_unsafe,
                                          lam_safe, lam_dyn, lam_unsafe, lam_dh,
                                          gamma_safe, gamma_dyn, gamma_unsafe, centers=centers)
-    #print(L) 
     loss = []
     loss_Lsafe = []
     loss_Ldyn = []
@@ -191,10 +142,9 @@ def gradient_descent(a, theta, it, eps, mu, tol, x_safe, u_safe, x_buffer, u_buf
     mom = 0
     v, grad, _ = L(theta)
     v_prev = v + 10
-    #print("initial loss", v)
+
     for i in range(it+1):
         #theta_ip1 = theta - eps * (1 + jnp.cos(i*jnp.pi/it)) * grad
-        #if v is not None:
         v, grad, losses = L(theta)
         L_safe_v, L_safe_dyn, L_buffer, L_unsafe_v, L_unsafe_dyn, L_dh, L_hm, L_bd = losses
         loss_Lsafe.append(L_safe_v)
@@ -260,12 +210,12 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
     b = np.concatenate([-gamma_safe  *np.ones(ns) + o*np.ones(ns),
                          gamma_unsafe*np.ones(nu) - o*np.ones(nu),
                         -gamma_dyn*np.ones(ns+nb) + o*np.ones(ns+nb)])
-    #print("x2pi shape", x2pi.shape)
-    #print("x0 shape", x0.shape)
+
     if x2pi is not None:
         b2 = np.zeros(x2pi.shape[0])
         b = np.concatenate([b, b2])
     print("b shape", b.shape)
+
     if u_buffer.shape[0] != 0:
         A1 = sparse.csc_array(np.vstack(( -phiT(x_safe  ,C),
                                            phiT(x_unsafe,C),
@@ -279,16 +229,13 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
                                        -((Dphi(x_safe,C) @ (fv(x_safe,0) + (gv(x_safe,0) @ u_safe[...,np.newaxis]).squeeze())[...,np.newaxis]).squeeze() + gamma*phiT(x_safe,C))
                                        ))
                              )
-    #print("A shape", A.shape)
-    #print("def shape",Dphi(x2pi,C).shape)
-    #print("T shape", Dphi(x2pi,C).T.shape)
+
     if x2pi is not None:
         A2 = sparse.csc_array(phiT(x2pi,C) - phiT(x0,C))
-#                            Dphi(x2pi,C) - Dphi(x0,C)))
+        #                    Dphi(x2pi,C) - Dphi(x0,C)))
         A = sparse.csc_array(sparse.vstack((A1, A2)))
     else:
         A = A1
-        #print("A shape", A.shape)
 
     n0 = 0
     for i in range(A.shape[0]):
@@ -297,7 +244,6 @@ def clarabel_solve_cbf(a, x_safe  , u_safe  ,
                 n0 += 1
     print("num zero elems in A:", n0)
 
-     
     if x2pi is not None:
         cones = [clarabel.NonnegativeConeT(A1.shape[0]), clarabel.ZeroConeT(A2.shape[0])]
     else:
@@ -390,9 +336,7 @@ def get_learning_cbfs_lagrangian(a, x_safe  , u_safe  ,
                  #lam_dh    * (Dgnorm_safe_L).sum(axis=0) + \
                  #lam_dh    * (Dgnorm_buffer_L).sum(axis=0))
 
-
     return L
-
 
 
 def get_learning_cbfs_lagrangian_dualnorm(a, x_safe  ,
@@ -474,7 +418,6 @@ def get_learning_cbfs_lagrangian_dualnorm(a, x_safe  ,
                             for x in x_buffer])
 )
 '''
-
 
 ###################
 #### DEPRECATED ###

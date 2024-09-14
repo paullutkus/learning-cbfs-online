@@ -248,7 +248,7 @@ def plot_angle_data(centers, grid, obs_dict, s, safe=None, buffer=None, unsafe=N
 ### Trajectory-sampled data ###
 ###############################
 
-
+# unused
 def generate_trajecotries(a, V, grid):
     f = a.dynamics.open_loop_dyanmics
     g = a.dynamics.control_jacobian 

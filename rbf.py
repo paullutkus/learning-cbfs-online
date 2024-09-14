@@ -8,25 +8,31 @@ from distances import cylindrical_metric
 w = 1e-4
 
 
-def get_h(a, jax_f=False):
+def get_h(a, jax_f=False, almost_active=False):
     b  = a.b
     bf = a.bf
     s  = a.s 
+    eps = a.eps
     thscl = a.theta_scale
     if jax_f or a.jax_f:
-        def h(x, C, theta):
-            h_vec = jnp.einsum('ijk,jk->j', phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True), theta)
-            i = jnp.argmax(h_vec)
-            return h_vec[i] + b, i
+        if a.almost_active:
+            def h(x, C, theta):
+                h_vec = jnp.einsum('ijk,jk->j', phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True), theta)
+                idx = jnp.argsort(h_vec, descending=True)
+                almost_active_set = (h_vec[idx][0] - h_vec[idx] <= eps)
+                # instead of i = idx[almost_active_set]
+                i = jnp.where(almost_active_set, x=idx, y=-jnp.ones_like(idx))
+                return h_vec[i[0]] + b, i[0]
+        else:
+            def h(x, C, theta):
+                h_vec = jnp.einsum('ijk,jk->j', phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True), theta)
+                i = jnp.argmax(h_vec)
+                return h_vec[i] + b, i
         return jax.vmap(h, in_axes=(0, None, None))
     else:
         def h(x, C, theta):
-            #print("phi shape", phiT(x, C, bf, s, thscl=thscl, jax_f=False).shape)
-            #print("theta shape", theta.shape)
             h_vec = np.einsum('ijk,jk->ij', phiT(x, C, bf, s, thscl=thscl, jax_f=False), theta)
-            #print("h_vec shape", h_vec.shape)
             i = np.argmax(h_vec, axis=1)
-            #print("i shape", i.shape)
             return h_vec[np.arange(h_vec.shape[0]), i] + b, i
         return h
 
@@ -35,18 +41,24 @@ def get_h_curr(a, jax_f=False):
     b     = a.b
     bf    = a.bf
     s     = a.s 
-    C     = np.array(a.centers)
+    eps   = a.eps
     thscl = a.theta_scale
+    C     = np.array(a.centers)
     theta = np.array(a.thetas)
     if jax_f or a.jax_f:
-        def h(x):
-            #print("x shape", x.shape)
-            #print("c.shape", C.shape)
-            #print("theta shape", theta.shape)
-            #print("phi shape", phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True).shape)
-            h_vec = jnp.einsum('ijk,jk->j', phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True), theta)
-            i = jnp.argmax(h_vec)
-            return h_vec[i] + b, i
+        if a.almost_active:
+            def h(x):
+                h_vec = jnp.einsum('ijk,jk->j', phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True), theta)
+                idx = jnp.argsort(h_vec, descending=True)
+                almost_active_set = (h_vec[idx][0] - h_vec[idx] <= eps)
+                # instead of i = idx[almost_active_set]
+                i = jnp.where(almost_active_set, x=idx, y=-jnp.ones_like(idx))
+                return h_vec[i[0]] + b, i[0]
+        else: 
+            def h(x):
+                h_vec = jnp.einsum('ijk,jk->j', phiT(x[jnp.newaxis,:], C, bf, s, thscl=thscl, jax_f=True), theta)
+                i = jnp.argmax(h_vec)
+                return h_vec[i] + b, i
         return jax.vmap(h, in_axes=(0))
     else:
         def h(x):
@@ -65,13 +77,8 @@ def phiT(x, C, bf, s, thscl=None, jax_f=False):
             phiTv = jax.vmap(jax_multiquadric, in_axes=(0, None, None, None))
             return phiTv(x, C, s, thscl)
     if thscl is not None:
-        #r = cylindrical_metric(x[...,np.newaxis,:], C[np.newaxis,...], a=thscl, phi_eval=True)
         r = cylindrical_metric(x[...,np.newaxis,:], C, a=thscl, phi_eval=True)[:,np.newaxis,:]
-        #print(r.shape)
     else:
-        #r = np.linalg.norm(x[...,np.newaxis,:] - C[np.newaxis,...], ord=2, axis=-1)
-        #print("x[...,np.newaxis,:].shape", x[...,np.newaxis,:].shape)
-        #print("C.shape", C.shape)
         r = np.linalg.norm(x[...,np.newaxis,:] - C, ord=2, axis=-1)[:,np.newaxis,:]
     if bf == 0:
         phi = np.e**(-s*r**2)
@@ -80,7 +87,6 @@ def phiT(x, C, bf, s, thscl=None, jax_f=False):
         phi = np.sqrt(s + r**2)
         return phi
     if bf == 31:
-        #print("r shape", r.shape)
         phi = np.maximum(0, s - r)**4 * (1 + 4*r)/20
         return phi
     if bf == 32: 
@@ -262,20 +268,13 @@ def get_Dphi_curr(a):
 
 
 def jax_phiT(x, C, s, thscl=None): # is a column vector
-    #print("x shape", x.shape)
-    #print("x[...,jnp.newaxis,:] shape", x[...,jnp.newaxis,:].shape)
-    #print("C shape", C.shape)
     if thscl is not None:
         D = x[...,jnp.newaxis,:] - C
         r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
     else:
         D = x[...,jnp.newaxis,:] - C
         r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2)
-
-    #r  = jnp.sqrt(w + ((x[...,jnp.newaxis,:] - C)**2).sum(axis=-1))
-
     phi = (jnp.maximum(0, s - r)**4 * (1 + 4*r)/20)
-    #print("phi shape", phi.shape)
     return phi
 
 
@@ -283,24 +282,6 @@ def jax_get_phiT(a):
     s  = a.s
     thscl = a.theta_scale
     phiT = Partial(jax_phiT, s=s, thscl=thscl)
-    '''
-    def phiT(x, C): # is a column vector
-        if thscl is not None:
-            D = x[...,jnp.newaxis,:] - C
-            r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
-        else:
-            D = x[...,jnp.newaxis,:] - C
-            r = jnp.sqrt(w + D[...,0]**2 + D[...,1]**2)
-        #print("x shape", x.shape)
-        #print("C shape", C.shape)
-        #print("D shape", D.shape)
-        #print("r shape", r.shape)
-        #r  = jnp.sqrt(w + ((x[...,jnp.newaxis,:] - C)**2).sum(axis=-1))
-
-        phi = jnp.maximum(0, 1 - r)**4 * (1 + 4*r)/20
-        #print("phi shape", phi.shape)
-        return phi
-    '''
     return phiT
 
 
@@ -309,16 +290,6 @@ def jax_get_phiT_curr(a):
     C  = a.centers[-1]
     thscl = a.theta_scale
     phiT = Partial(jax_phiT, C=C, s=s, thscl=thscl)
-    '''
-    def phiT(x): # is a column vector
-        D = x[...,jnp.newaxis,:] - C
-        r = jnp.sqrt(D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
-
-        #r  = jnp.sqrt(w + ((x[...,jnp.newaxis,:] - C)**2).sum(axis=-1))
-
-        phi = jnp.maximum(0, s - r)**4 * (1 + 4*r)/20
-        return phi
-    '''
     return phiT
 
 
@@ -333,17 +304,6 @@ def jax_get_multiquadric(a):
     s = a.s
     thscl = a.theta_scale
     phiT = Partial(jax_multiquadric, s=s, thscl=thscl)
-    '''
-    def phiT(x, C):
-        D = x[jnp.newaxis,:] - C
-        print("x[jnp.newaxis,:] shape", x[jnp.newaxis,:].shape)
-        print("C shape", C.shape)
-        print("D shape", D.shape)
-        print("D", D[...,)
-        r = jnp.sqrt(D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
-        phi = r
-        return phi
-    '''
     return phiT
 
 
@@ -352,10 +312,5 @@ def jax_get_multiquadric_curr(a):
     C = a.centers[-1]
     thscl = a.theta_scale
     phiT = Partial(jax_multiquadric, C=C, s=s, thscl=thscl)
-    '''
-    def phiT(x):
-        D = x[jnp.newaxis,:] - C
-        r = jnp.sqrt(D[...,0]**2 + D[...,1]**2 + jnp.minimum(thscl*D[...,2], thscl*(2*jnp.pi-D[...,2]))**2)
-        phi = r
-        return phi
-    '''
+    return phiT
+

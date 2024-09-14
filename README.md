@@ -11,4 +11,4 @@ tqdm,
 copy
 
 # Forked Libraries:
-https://github.com/StanfordASL/hj_reachability.git
+https://github.com/StanfordASL/hj_reachability

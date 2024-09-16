@@ -402,8 +402,6 @@ def quad_plot(a, i, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, f
     ax.add_patch(obs_C)
     ax.add_patch(obs_C_outline)
 
-
-
     if d == 3:
         for x in curr_data:
             hx, _ = h(x[np.newaxis,...], centers, thetas)
@@ -437,7 +435,6 @@ def quad_plot(a, i, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, f
                 ax.plot(traj[traj_idx[j]:traj_idx[j+1],0], traj[traj_idx[j]:traj_idx[j+1],1], color=colors[j], marker=".")
             ax.plot(final_traj[:,0], final_traj[:,1], color='magenta', linestyle="--", linewidth=5)
 
-
     elif d == 2:
         width = a.width
         n  = 500
@@ -460,8 +457,7 @@ def quad_plot(a, i, ax, pos, centers, thetas, curr_data, traj, grid, obs_dict, f
     return
 
 
-
-def cbf_sdf_plot(a, i, ax, cbf_traj, sdf_traj, ht, centers, thetas):
+def cbf_sdf_plot(a, i, ax, cbf_traj, sdf_traj, ht, ht_sdf, centers, thetas):
 
     #matplotlib.use('ps')
     #from matplotlib import rc
@@ -473,7 +469,6 @@ def cbf_sdf_plot(a, i, ax, cbf_traj, sdf_traj, ht, centers, thetas):
 
     h = get_h(a)
     s = a.spacing 
-
 
     #ax.set_title(r'x(t) under h', fontsize=20, y=0.9, color=colors[i])
     '''
@@ -547,11 +542,11 @@ def cbf_sdf_plot(a, i, ax, cbf_traj, sdf_traj, ht, centers, thetas):
         ax.tick_params(axis='both', direction='in', labelsize=16)
         ax.grid()
         zeroline = np.zeros(len(ht))
+        ax.plot(ht_sdf, color='gold',path_effects=[pe.withStroke(linewidth=3, foreground='black')])
         ax.plot(ht, color='magenta')
         ax.plot(zeroline, linestyle='dashed', alpha=1.0, linewidth=3, color='k')
 
     return
-
 
 
 def performance_comparison(a, fig, a2, axs, centers, thetas, trajecs, vs, usigs, N_part=20):
@@ -687,8 +682,6 @@ def performance_comparison(a, fig, a2, axs, centers, thetas, trajecs, vs, usigs,
             ax.plot(traj2[:,0], traj2[:,1], color='#fcd69a', linestyle='dashed', linewidth=3, path_effects=[pe.withStroke(linewidth=5,foreground='black')]) #f6ff00
             ax.plot(traj1[:,0], traj1[:,1], color='#351463', linestyle='solid', linewidth=3, path_effects=[pe.withStroke(linewidth=5,foreground='black')]) #cb0e40
             ax.plot(traj1[-1,0], traj1[-1,1], color='red', marker='*', ms=20, markeredgecolor='black')
-
-
 
         else:
             ax.set_ylim(-1.2, 2.5)
